@@ -39,7 +39,7 @@ export default async function handler(req, res) {
 
     // Send SMS via Africa's Talking LIVE
     const params = new URLSearchParams();
-    params.append("username", "kaziapa");
+    params.append("username", "Kaziapa");
     params.append("to", fp);
     params.append("message", message);
 
