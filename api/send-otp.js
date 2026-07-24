@@ -40,6 +40,7 @@ export default async function handler(req, res) {
     params.append("username", "Kaziapa");
     params.append("to", fp);
     params.append("message", message);
+    params.append("from", "KaziApa"); // Approved Sender ID — real branded SMS
 
     const smsRes = await fetch("https://api.africastalking.com/version1/messaging", {
       method: "POST",
@@ -55,7 +56,7 @@ export default async function handler(req, res) {
     const recipient = smsData?.SMSMessageData?.Recipients?.[0];
 
     if (recipient && recipient.status === "Success") {
-      // Real SMS delivered successfully
+      // Real SMS delivered successfully, sent from "KaziApa"
       return res.status(200).json({ success: true, smsDelivered: true });
     } else {
       // SMS gateway issue — fallback: return OTP directly so user isn't blocked
