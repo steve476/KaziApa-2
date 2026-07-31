@@ -1,1 +1,10 @@
-
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "co.ke.kaziapa.app",
+    "sha256_cert_fingerprints": [
+      "03:F6:7F:6D:E0:47:01:1F:CD:94:4F:3D:28:16:7B:46:E8:00:76:70:CA:07:42:E1:CC:3C:ED:61:3A:89:AF:BA"
+    ]
+  }
+}]
