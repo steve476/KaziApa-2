@@ -28,7 +28,10 @@ const PRICING = {
     topup10: { amount: 20, days: 1 },   // +10 conversation-starts, same day only
     week: { amount: 50, days: 7 },      // unlimited for 7 days
     month: { amount: 250, days: 30 },   // unlimited for 30 days
-  },
+    contact_unlock: {
+      standard: { amount: 50, days: 36500 },
+    },
+  };
 };
 
 const BASE_URL = "https://api.safaricom.co.ke";
