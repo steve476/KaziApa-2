@@ -116,6 +116,15 @@ export default async function handler(req, res) {
           });
         }
         break;
+      case "contact_unlock":
+        await supabaseFetch("listing_unlocks", {
+          method: "POST",
+          body: JSON.stringify({
+            property_id: purchase.listing_id,
+            tenant_phone: purchase.phone,
+          }),
+        });
+        break;
 
       default:
         console.error("Unknown purchase type:", purchase.type);
