@@ -423,12 +423,12 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
     }
     await sb.from("chats").insert({ listing_id:String(listing?.id||""), listing_title:listing?.title, buyer_phone:buyerPhone, buyer_name:buyerName, seller_phone:sellerPhone, seller_name:sellerName, sender_phone:currentPhone, sender_name:currentName, message:input, read:false });
 
-    // Send WhatsApp notification to the OTHER person via our own approved template
+    // Notify the OTHER person — push if they have it enabled, SMS fallback otherwise
     const recipientPhone = isBuyer ? sellerPhone : buyerPhone;
-    fetch("/api/notify-whatsapp", {
+    fetch("/api/notify-message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: recipientPhone, senderName: currentName }),
+      body: JSON.stringify({ phone: recipientPhone, senderName: currentName, message: input }),
     }).catch(()=>{});
 
     setInput("");
@@ -447,7 +447,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
       const url = await compressAndUploadChatImage(file);
       await sb.from("chats").insert({ listing_id:String(listing?.id||""), listing_title:listing?.title, buyer_phone:buyerPhone, buyer_name:buyerName, seller_phone:sellerPhone, seller_name:sellerName, sender_phone:currentPhone, sender_name:currentName, message:"📷 Photo", image_url:url, read:false });
       const recipientPhone = isBuyer ? sellerPhone : buyerPhone;
-      fetch("/api/notify-whatsapp", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ phone:recipientPhone, senderName:currentName }) }).catch(()=>{});
+      fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ phone:recipientPhone, senderName:currentName, message:"📷 Photo" }) }).catch(()=>{});
       loadMsgs();
     } catch(err) {
       alert("Couldn't send that photo — try again.");
@@ -816,6 +816,50 @@ export default function KaziApa() {
     window.addEventListener("popstate", handlePop);
     return ()=>window.removeEventListener("popstate", handlePop);
   },[screen, authStep]);
+
+  // Web Push — ask permission once and save the subscription against this
+  // phone number, so notify-message.js can reach this device for free
+  // instead of falling back to a paid SMS. Safe to run every app load:
+  // Notification.requestPermission() only actually prompts the user once
+  // (it just returns the existing decision on later calls), and re-saving
+  // the same subscription is harmless (upserted by endpoint).
+  useEffect(()=>{
+    if(authStep!=="app" || !phone) return;
+    (async()=>{
+      try {
+        if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+        if(Notification.permission === "denied") return;
+
+        const permission = await Notification.requestPermission();
+        if(permission !== "granted") return;
+
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if(!sub) {
+          const VAPID_PUBLIC_KEY = "BJQ5822-glkiTYsjuMcHifyMkY_2jx4T1D5j1H1r0cRIBb2lUJzfRwCxdnH_KhJr5WETl98FZA-p7YaQKN8gAQk";
+          const padding = "=".repeat((4 - VAPID_PUBLIC_KEY.length % 4) % 4);
+          const base64 = (VAPID_PUBLIC_KEY + padding).replace(/-/g,"+").replace(/_/g,"/");
+          const rawData = atob(base64);
+          const appServerKey = new Uint8Array(rawData.length);
+          for(let i=0;i<rawData.length;i++) appServerKey[i] = rawData.charCodeAt(i);
+
+          sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: appServerKey,
+          });
+        }
+
+        await fetch("/api/save-push-subscription", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, subscription: sub.toJSON() }),
+        }).catch(()=>{});
+      } catch(err) {
+        // Notification permission dismissed, unsupported browser, etc. — SMS
+        // fallback in notify-message.js still covers this user either way.
+      }
+    })();
+  },[authStep, phone]);
 
   // Load listings from Supabase
   useEffect(()=>{
@@ -4721,7 +4765,7 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
       const msg = uaAction === "payment"
         ? `Your landlord recorded a payment of Ksh ${uaAmount} on your KaziApa rent account`
         : `Your landlord updated your KaziApa rent account (${UA_LABELS[uaAction]}: Ksh ${uaAmount})`;
-      await fetch("/api/notify-whatsapp", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ phone: uaTargetTenancy.tenant_phone, senderName: msg }) });
+      await fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ phone: uaTargetTenancy.tenant_phone, body: msg }) });
     } catch(e) {}
     loadAll();
     if (tenancy && tenancy.id === uaTargetTenancy.id) openUnit(activeUnit);
@@ -5752,8 +5796,8 @@ function TenantRentView({ phone, userName, showToast }) {
     });
     showToast("Issue reported — your landlord has been notified");
     try {
-      await fetch("/api/notify-whatsapp", { method:"POST", headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ phone: active.landlord_phone, senderName: `New maintenance report (${mCategory}) — open KaziApa` }) });
+      await fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ phone: active.landlord_phone, body: `New maintenance report (${mCategory}) — open KaziApa` }) });
     } catch(e) {}
     setMDesc(""); setMPhoto(""); setMCategory("plumbing");
     setSubmitting(false);
