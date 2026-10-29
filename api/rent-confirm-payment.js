@@ -69,9 +69,9 @@ export default async function handler(req, res) {
       const msg = action === "confirm"
         ? `Your rent payment of Ksh ${entry.amount} has been confirmed`
         : `Your rent payment of Ksh ${entry.amount} was disputed: ${disputeReason}. Open KaziApa for details`;
-      await fetch(`https://${req.headers.host}/api/notify-whatsapp`, {
+      await fetch(`${process.env.APP_URL || "https://kaziapa.co.ke"}/api/notify-whatsapp`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-internal-key": process.env.INTERNAL_API_KEY || "" },
         body: JSON.stringify({ phone: entry.tenant_phone, senderName: msg }),
       });
     } catch (notifyErr) {
