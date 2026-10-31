@@ -1285,6 +1285,29 @@ export default function KaziApa() {
     document.addEventListener("visibilitychange", onVisible);
     return ()=>document.removeEventListener("visibilitychange", onVisible);
   },[authStep, phone]);
+
+  // Keep people logged in: when the login token has under 20 days left, swap it for a fresh one (at most once every 6 hours).
+  const lastRefreshRef = useRef(0);
+  useEffect(()=>{
+    if(authStep!=="app") return;
+    async function refreshToken() {
+      try {
+        const now = Math.floor(Date.now()/1000);
+        if(now - lastRefreshRef.current < 6*3600) return;
+        const t = JSON.parse(localStorage.getItem("kaziapa_token") || "null");
+        if(!t || !t.token || !t.exp || t.exp <= now + 60) return;       // none, or too late: the sign-in screen handles it
+        if(t.exp - now > 20*24*3600) return;                              // still plenty of time left
+        lastRefreshRef.current = now;
+        const res = await fetch("/api/refresh-token", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:t.token }) });
+        const d = await res.json();
+        if(d.success && d.token) localStorage.setItem("kaziapa_token", JSON.stringify({ token:d.token, exp:d.tokenExpiresAt }));
+      } catch(e) {}
+    }
+    refreshToken();
+    function onVis() { if(document.visibilityState==="visible") refreshToken(); }
+    document.addEventListener("visibilitychange", onVis);
+    return ()=>document.removeEventListener("visibilitychange", onVis);
+  },[authStep]);
   const SAFE_SCREENS = ["home","browse","requests","post","profile","chats","kiosk","myListings","guidelines","privacy","terms","about","admin","housing","orders","nitume","market"];
   // Note: "marketProfile" is intentionally NOT in SAFE_SCREENS — it depends on
   // activeMarket, which isn't safe to restore blindly after a raw page refresh.
