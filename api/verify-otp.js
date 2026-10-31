@@ -1,5 +1,6 @@
 // api/verify-otp.js
 import crypto from "crypto";
+import { signLoginToken } from "./_login-token.js";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://dalaawxoiecrmfwxwrdn.supabase.co";
 // Private service key once SUPABASE_SERVICE_ROLE_KEY is set in Vercel; public key until then.
@@ -33,41 +34,6 @@ function sameCode(a, b) {
   const x = Buffer.from(String(a));
   const y = Buffer.from(String(b));
   return x.length === y.length && crypto.timingSafeEqual(x, y);
-}
-
-// ── Login token (signed with our own ES256 key, which Supabase also knows as a standby signing key) ──
-const LOGIN_KID = "1bb7fc08-665c-48ad-a80c-3525eeb8c793";
-const TOKEN_DAYS = 30;
-
-function b64url(x) {
-  return Buffer.from(x).toString("base64url");
-}
-
-// Returns { token, expiresAt } or null if the key isn't set up / signing fails (login itself must never break because of this).
-function makeLoginToken(fp) {
-  try {
-    if (!process.env.LOGIN_PRIVATE_JWK) return null;
-    const jwk = JSON.parse(process.env.LOGIN_PRIVATE_JWK);
-    const key = crypto.createPrivateKey({ key: jwk, format: "jwk" });
-    const now = Math.floor(Date.now() / 1000);
-    const exp = now + TOKEN_DAYS * 24 * 60 * 60;
-    const header = { alg: "ES256", typ: "JWT", kid: LOGIN_KID };
-    const payload = {
-      iss: `${SUPABASE_URL}/auth/v1`,
-      aud: "authenticated",
-      role: "authenticated",
-      sub: fp,
-      phone: fp,
-      iat: now,
-      exp,
-    };
-    const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
-    const sig = crypto.sign("sha256", Buffer.from(input), { key, dsaEncoding: "ieee-p1363" });
-    return { token: `${input}.${sig.toString("base64url")}`, expiresAt: exp };
-  } catch (e) {
-    console.error("verify-otp: could not sign login token:", e.message);
-    return null;
-  }
 }
 
 export default async function handler(req, res) {
@@ -119,7 +85,7 @@ export default async function handler(req, res) {
 
     // Correct: remove all codes for this number so none can be reused
     await db(`otp_codes?phone=eq.${enc(fp)}`, { method: "DELETE" }).catch(() => {});
-    const login = makeLoginToken(fp);
+    const login = signLoginToken(fp, Math.floor(Date.now() / 1000));
     return res.status(200).json({ success: true, token: login ? login.token : null, tokenExpiresAt: login ? login.expiresAt : null });
   } catch (err) {
     console.error("verify-otp error:", err);
