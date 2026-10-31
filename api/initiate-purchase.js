@@ -69,6 +69,10 @@ function getTimestamp() {
   );
 }
 
+// Server-side files use the secret key (SUPABASE_SERVICE_ROLE_KEY); the public key is only a fallback so nothing breaks if it is missing.
+const DB_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+const DB_AUTH = String(DB_KEY || "").startsWith("sb_") ? {} : { Authorization: `Bearer ${DB_KEY}` };
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -133,8 +137,8 @@ export default async function handler(req, res) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        apikey: process.env.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${process.env.SUPABASE_ANON_KEY}`,
+        apikey: DB_KEY,
+        ...DB_AUTH,
         Prefer: "return=minimal",
       },
       body: JSON.stringify({
