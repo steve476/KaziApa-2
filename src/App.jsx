@@ -1921,9 +1921,9 @@ export default function KaziApa() {
 
   async function useFreeBoost() {
     setBoosting(true);
-    const expiresAt = new Date(Date.now()+7*24*60*60*1000).toISOString(); // free boost = 7 days
-    await sb.from("listings").update({ featured:true, featured_expires_at:expiresAt }).eq("id",activeListing.id);
-    await sb.from("users").update({ free_boosts_remaining:Math.max(0,freeBoosts-1) }).eq("phone",phone);
+    // The database checks the listing is yours and that you have a free boost left (free boost = 7 days)
+    const { error:boostErr } = await sb.rpc("use_free_boost", { p_listing_id:String(activeListing.id) });
+    if(boostErr) { setBoosting(false); showToast("Couldn't use the free boost. Try again.", "error"); return; }
     setActiveListing({ ...activeListing, featured:true });
     setFreeBoosts(f=>Math.max(0,f-1));
     setBoosting(false);
@@ -2691,9 +2691,7 @@ export default function KaziApa() {
                     const id = String(activeListing.id);
                     const { error } = await sb.from("listing_reports").insert({ listing_id:id, reporter_phone:phone });
                     if(error && error.code==="23505") { markReported(id, activeListing.title); showToast("You already reported this listing. We're reviewing it."); return; }
-                    // Count it for the admin Reports tab (also used if the listing_reports table isn't created yet)
-                    const { data:cur } = await sb.from("listings").select("reports").eq("id",activeListing.id).single();
-                    await sb.from("listings").update({ reports:((cur?.reports)||0)+1 }).eq("id",activeListing.id);
+                    // The database adds this report to the listing count for the admin Reports tab
                     markReported(id, activeListing.title);
                     showToast("Reported. Our team will review this listing. Thank you.");
                   } });
@@ -3987,7 +3985,7 @@ function UsafiriScreen({ userName, phone, town, showToast, onBack, lang }) {
       category: "usafiri",
       town: vTown,
       seller_name: vName,
-      seller_phone: vPhone||phone,
+      seller_phone: phone,
       usafiri_type: vType,
       usafiri_stage: vStage,
       usafiri_area: vArea,
@@ -4161,7 +4159,6 @@ function UsafiriScreen({ userName, phone, town, showToast, onBack, lang }) {
             <Field label="Your Stage / Base Location" value={vStage} onChange={setVStage} placeholder="e.g. Kondele Stage, Nakuru CBD Stage..." />
             <Field label="Your Town" value={vTown} onChange={setVTown} placeholder="e.g. Nakuru, Kisumu..." />
             <Field label="Area You Cover" value={vArea} onChange={setVArea} placeholder="e.g. Kondele to Town, Nakuru all areas..." />
-            <Field label="Your Phone Number" value={vPhone} onChange={setVPhone} placeholder="07XXXXXXXX" />
             <Field label="About You (optional)" value={vDesc} onChange={setVDesc} placeholder="Years of experience, type of trips, anything clients should know..." rows={3} />
 
             <div style={{ display:"flex",alignItems:"center",gap:10,background:T.surface,borderRadius:12,padding:12,marginBottom:16,cursor:"pointer" }} onClick={()=>setVAvail(!vAvail)}>
@@ -9312,18 +9309,13 @@ function OrdersScreen({ sb, phone, onBack }) {
   async function rateSeller(o, star) {
     if(busyId) return;
     setBusyId(o.id);
-    const { data:l } = await sb.from("listings").select("*").eq("id",o.listing_id).single();
-    // True average: (old average × number of ratings + new stars) ÷ (number of ratings + 1)
-    const oldCount = l?.rating_count ?? (l?.rating ? 1 : 0);
-    const oldAvg = Number(l?.rating) || 0;
-    const newCount = oldCount + 1;
-    const newRating = Math.round(((oldAvg*oldCount + star)/newCount)*10)/10;
-    let up = await sb.from("listings").update({ rating:newRating, rating_count:newCount }).eq("id",o.listing_id);
-    if(up.error) await sb.from("listings").update({ rating:newRating }).eq("id",o.listing_id); // rating_count column not added yet
-    const { error } = await sb.from("orders").update({ status:"rated" }).eq("id",o.id);
+    const { data:l } = await sb.from("listings").select("title").eq("id",o.listing_id).single();
+    // The database works out the new average and marks the order rated, only for the buyer of a confirmed order
+    const { error } = await sb.rpc("rate_order", { p_order_id:String(o.id), p_stars:star });
     setBusyId(null);
     setNote(error ? "Couldn't save your rating. Try again." : `Rated ${star} stars. Thank you!`);
     load();
+    if(error) return;
     try {
       await sb.from("notifications").insert({ recipient_phone:o.seller_phone, icon:"⭐", read:false, title:`New ${star}-star rating`, body:`A buyer rated you ${star} out of 5 for "${l?.title||"an order"}".` });
     } catch(e) {}
