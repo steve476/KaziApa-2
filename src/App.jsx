@@ -1559,7 +1559,9 @@ export default function KaziApa() {
     }
     checkUnread();
     const interval = setInterval(checkUnread, 10000);
-    return ()=>clearInterval(interval);
+    // Bell alerts (new order, payment confirmed, ratings...) refresh every 30 seconds too
+    const bellInterval = setInterval(loadNotifications, 30000);
+    return ()=>{ clearInterval(interval); clearInterval(bellInterval); };
   },[authStep, phone]);
 
   async function loadListings() {
@@ -2335,7 +2337,7 @@ export default function KaziApa() {
               </div>
               <div style={{ display:"flex",gap:6,flexShrink:0 }}>
                 {/* Notifications bell */}
-                <div onClick={()=>{ setShowNotifs(true); markNotifsRead(); }} style={{ position:"relative",background:"rgba(255,255,255,0.12)",borderRadius:20,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center" }}>
+                <div onClick={async()=>{ setShowNotifs(true); await loadNotifications(); markNotifsRead(); }} style={{ position:"relative",background:"rgba(255,255,255,0.12)",borderRadius:20,padding:"5px 8px",cursor:"pointer",display:"flex",alignItems:"center" }}>
                   <span aria-label="Notifications" style={{ color:"#fff",display:"flex" }}><Icon n="bell" s={18} /></span>
                   {notifications.filter(n=>!n.read).length > 0 && (
                     <div style={{ position:"absolute",top:-4,right:-4,background:T.coral,color:"#fff",borderRadius:"50%",width:18,height:18,fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center" }}>
