@@ -5500,45 +5500,72 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
   }
 
   function ensureXLSX() {
-    return new Promise((resolve, reject) => {
-      if (window.XLSX) { resolve(); return; }
-      const existing = document.getElementById("xlsx-cdn");
-      if (existing) { existing.addEventListener("load", ()=>resolve()); existing.addEventListener("error", reject); return; }
-      const s = document.createElement("script");
-      s.id = "xlsx-cdn";
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-      s.onload = () => resolve();
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
+    const urls = [
+      "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+      "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js",
+    ];
+    function load(url) {
+      return new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = url; s.async = true;
+        const t = setTimeout(()=>{ s.remove(); reject(new Error("took too long to load")); }, 15000);
+        s.onload = () => { clearTimeout(t); window.XLSX ? resolve() : reject(new Error("reader missing")); };
+        s.onerror = () => { clearTimeout(t); s.remove(); reject(new Error("could not load the reader")); };
+        document.head.appendChild(s);
+      });
+    }
+    return (async () => {
+      if (window.XLSX) return;
+      let lastErr;
+      for (const u of urls) { try { await load(u); return; } catch(e) { lastErr = e; } }
+      throw lastErr || new Error("could not load the reader");
+    })();
   }
 
-  function importField(row, ...aliases) {
-    const keys = Object.keys(row);
-    for (const alias of aliases) {
-      const k = keys.find(k => k.trim().toLowerCase() === alias.toLowerCase());
-      if (k !== undefined && String(row[k]).trim() !== "") return String(row[k]).trim();
+  // Reads a .csv without any outside library (handles quotes, commas inside quotes, Windows line breaks)
+  function parseCSVText(text) {
+    text = String(text || "").replace(/^\uFEFF/, "");
+    const rows = []; let row = [], cur = "", q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"' && text[i+1] === '"') { cur += '"'; i++; }
+        else if (c === '"') q = false;
+        else cur += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && text[i+1] === "\n") i++; row.push(cur); cur = ""; rows.push(row); row = []; }
+      else cur += c;
     }
-    return "";
+    if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+    const nonEmpty = rows.filter(r => r.some(x => String(x).trim() !== ""));
+    if (nonEmpty.length === 0) return [];
+    const head = nonEmpty[0].map(h => String(h).trim());
+    return nonEmpty.slice(1).map(r => { const o = {}; head.forEach((h, idx) => { o[h] = r[idx] === undefined ? "" : r[idx]; }); return o; });
   }
 
   async function parseImportFile(file) {
     setImportParsing(true);
     setImportDone(false);
     try {
-      await ensureXLSX();
-      const buf = await file.arrayBuffer();
-      const wb = window.XLSX.read(buf, { type:"array" });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const raw = window.XLSX.utils.sheet_to_json(sheet, { defval:"" });
+      let raw;
+      if ((file.name || "").toLowerCase().endsWith(".csv")) {
+        raw = parseCSVText(await file.text());
+      } else {
+        await ensureXLSX();
+        const buf = await file.arrayBuffer();
+        const wb = window.XLSX.read(buf, { type:"array" });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        raw = window.XLSX.utils.sheet_to_json(sheet, { defval:"" });
+      }
       const rows = raw.map(r => {
         const property = importField(r, "property","property name");
         const unit = importField(r, "unit","unit label","house","house number");
-        const rent = importField(r, "rent","rent amount","rent (ksh)");
+        const rent = String(importField(r, "rent","rent amount","rent (ksh)") ?? "").replace(/,/g,"").trim();
         const dueDay = importField(r, "due day","due date","due");
         const tenantName = importField(r, "tenant name","tenant","name");
         const tenantPhone = importField(r, "tenant phone","phone","tenant phone number");
-        const deposit = importField(r, "deposit","deposit amount");
+        const deposit = String(importField(r, "deposit","deposit amount") ?? "").replace(/,/g,"").trim();
         let error = null;
         if (!property) error = "Missing Property";
         else if (!unit) error = "Missing Unit";
@@ -5548,7 +5575,7 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
       setImportRows(rows);
       if (rows.length === 0) showToast("No rows found in that file", "error");
     } catch(err) {
-      showToast("Couldn't read that file. Use .xlsx or .csv", "error");
+      showToast("Couldn't read that file (" + (err && err.message ? err.message : "unknown") + "). Use .xlsx or .csv", "error");
     }
     setImportParsing(false);
   }
@@ -6447,7 +6474,7 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
             {importRows.length === 0 && (
               <label style={{ display:"block", textAlign:"center", padding:"16px 0", background:T.surface, border:`1px dashed ${T.border}`, borderRadius:12, fontSize:13, fontWeight:700, color:T.primary, cursor:"pointer" }}>
                 {importParsing ? "Reading file..." : "Choose File"}
-                <input type="file" accept=".xlsx,.xls,.csv" onChange={e=>e.target.files[0] && parseImportFile(e.target.files[0])} style={{ display:"none" }} />
+                <input type="file" accept=".xlsx,.xls,.csv,text/csv,text/comma-separated-values,application/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={e=>{ const f=e.target.files && e.target.files[0]; if(f) parseImportFile(f); e.target.value=""; }} style={{ display:"none" }} />
               </label>
             )}
             {importRows.length > 0 && (
