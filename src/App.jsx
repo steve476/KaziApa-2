@@ -5357,10 +5357,12 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
     if (!docLabel.trim()) { showToast("Add a label first (e.g. \"Lease Agreement 2026\")", "error"); return; }
     setDocUploading(true);
     try {
-      const compressed = await compressImageRT(file);
-      const name = `rtdoc-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-      const { error: upErr } = await sb.storage.from("kaziapa-photos").upload(name, compressed, { contentType:"image/jpeg" });
-      if (upErr) { showToast("Upload failed. Try again.", "error"); setDocUploading(false); return; }
+      const isPdf = file.type === "application/pdf" || (file.name || "").toLowerCase().endsWith(".pdf");
+      if (isPdf && file.size > 10 * 1024 * 1024) { showToast("That PDF is over 10 MB. Use a smaller file.", "error"); setDocUploading(false); return; }
+      const toUpload = isPdf ? file : await compressImageRT(file);
+      const name = `rtdoc-${Date.now()}-${Math.random().toString(36).slice(2)}.${isPdf ? "pdf" : "jpg"}`;
+      const { error: upErr } = await sb.storage.from("kaziapa-photos").upload(name, toUpload, { contentType: isPdf ? "application/pdf" : "image/jpeg" });
+      if (upErr) { showToast("Upload failed: " + (upErr.message || "try again"), "error"); setDocUploading(false); return; }
       const { data:pub } = sb.storage.from("kaziapa-photos").getPublicUrl(name);
       const { error } = await sb.from("rt_documents").insert({
         tenancy_id: tenancy.id, unit_id: activeUnit.id, landlord_phone: landlordPhone,
@@ -6030,8 +6032,8 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
                       <input type="file" accept="image/*" capture="environment" onChange={e=>e.target.files[0] && addDocument(e.target.files[0])} style={{ display:"none" }} />
                     </label>
                     <label style={{ flex:1, textAlign:"center", padding:"8px 0", background:T.surface, border:`1px solid ${T.border}`, borderRadius:9, fontSize:12, fontWeight:700, color:T.text, cursor:"pointer" }}>
-                      🖼️ Gallery / File
-                      <input type="file" accept="image/*" onChange={e=>e.target.files[0] && addDocument(e.target.files[0])} style={{ display:"none" }} />
+                      🖼️ Gallery / PDF
+                      <input type="file" accept="image/*,application/pdf,.pdf" onChange={e=>{ const f=e.target.files && e.target.files[0]; if(f) addDocument(f); e.target.value=""; }} style={{ display:"none" }} />
                     </label>
                   </div>
                   {docUploading && <div style={{ fontSize:12, color:T.textMuted, marginBottom:8 }}>Uploading...</div>}
@@ -6045,7 +6047,9 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
                   const typeLabel = { lease:"📜 Lease", id:"🪪 ID/KRA", inspection:"🔍 Inspection", other:"📎 Other" }[d.doc_type] || "📎";
                   return (
                     <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", textDecoration:"none", borderBottom:`1px solid ${T.border}` }}>
-                      <img src={d.file_url} style={{ width:44, height:44, objectFit:"cover", borderRadius:8, flexShrink:0 }} />
+                      {/\.pdf($|\?)/i.test(d.file_url || "")
+                  ? <div style={{ width:44, height:44, borderRadius:8, flexShrink:0, background:T.surface, border:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>📄</div>
+                  : <img src={d.file_url} style={{ width:44, height:44, objectFit:"cover", borderRadius:8, flexShrink:0 }} />}
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:12, fontWeight:700, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.label}</div>
                         <div style={{ fontSize:10, color:T.textMuted }}>{typeLabel} · {new Date(d.created_at).toLocaleDateString()}</div>
