@@ -8237,7 +8237,7 @@ function HoodListScreen({ phone, userName, showToast, onBack, onOpenMarket, navS
     const { error } = await sb.from("markets").insert({
       type:"hood", level:sLevel, name:sName.trim(), county: countyName || sName.trim(),
       parent_id, description: where ? `Suggested under: ${where}` : null,
-      status:"PENDING", suggested_by_phone:phone, slug
+      status:"PENDING_REVIEW", source_type:"COMMUNITY_SUGGESTED", suggested_by_phone:phone, slug
     });
     setSubmitting(false);
     if(error) { showToast("Couldn't send it: " + error.message, "error"); return; }
@@ -9491,7 +9491,7 @@ function AdminPanel({ sb, onBack, showToast }) {
       const { data } = await sb.from("properties").select("*").gt("strikes",0).order("strikes",{ ascending:false });
       setStrikedProps(data||[]);
     } else if (tab==="hoods") {
-      const { data: pending } = await sb.from("markets").select("*").eq("type","hood").eq("status","PENDING").order("created_at",{ ascending:false });
+      const { data: pending } = await sb.from("markets").select("*").eq("type","hood").eq("status","PENDING_REVIEW").order("created_at",{ ascending:false });
       const parentIds = [...new Set((pending||[]).map(h=>h.parent_id).filter(Boolean))];
       let parentsById = {};
       if (parentIds.length) {
