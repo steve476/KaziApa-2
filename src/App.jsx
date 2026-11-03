@@ -9441,6 +9441,7 @@ function AdminPanel({ sb, onBack, showToast }) {
   const [userResults, setUserResults] = useState([]);
   const [strikedProps, setStrikedProps] = useState([]);
   const [noticeReports, setNoticeReports] = useState([]);
+  const [statusReports, setStatusReports] = useState([]);
   const [hoodSuggestions, setHoodSuggestions] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -9451,6 +9452,8 @@ function AdminPanel({ sb, onBack, showToast }) {
     if (tab==="reports") {
       const { data } = await sb.from("listings").select("*").gt("reports",0).order("reports",{ ascending:false });
       setReports(data||[]);
+      const { data: stReps } = await sb.from("statuses").select("*").gt("reports",0).gt("expires_at", new Date().toISOString()).order("reports",{ ascending:false });
+      setStatusReports(stReps||[]);
     } else if (tab==="notices") {
       const { data: reps } = await sb.from("market_notice_reports").select("*").order("created_at",{ ascending:false });
       const noticeIds = [...new Set((reps||[]).map(r=>r.notice_id))];
@@ -9497,6 +9500,19 @@ function AdminPanel({ sb, onBack, showToast }) {
     if(up.error) await sb.from("listings").update({ reports:0 }).eq("id",id);
     setReports(prev=>prev.filter(r=>r.id!==id));
     showToast("Report dismissed.");
+  }
+  async function dismissStatusReport(id) {
+    const { error } = await sb.from("statuses").update({ reports:0 }).eq("id",id);
+    if(error) { showToast("Couldn't dismiss: " + error.message, "error"); return; }
+    setStatusReports(prev=>prev.filter(r=>r.id!==id));
+    showToast("Status report dismissed.");
+  }
+  async function removeStatusAdmin(id) {
+    if(!await askConfirm("Permanently delete this status?")) return;
+    const { error } = await sb.from("statuses").delete().eq("id",id);
+    if(error) { showToast("Delete failed: " + error.message, "error"); return; }
+    setStatusReports(prev=>prev.filter(r=>r.id!==id));
+    showToast("Status removed.");
   }
   async function removeListing(id) {
     if(!await askConfirm("Permanently delete this listing?")) return;
@@ -9621,6 +9637,28 @@ function AdminPanel({ sb, onBack, showToast }) {
               </div>
             </div>
           ))
+        )}
+
+        {!loading && tab==="reports" && statusReports.length>0 && (
+          <>
+            <div style={{ fontWeight:800,fontSize:13,color:T2.text,margin:"16px 0 8px" }}>🕒 Reported statuses</div>
+            {statusReports.map(r=>(
+              <div key={r.id} style={{ background:"#fff",borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${T2.border}` }}>
+                <div style={{ display:"flex",gap:10 }}>
+                  {r.image_url && <img src={r.image_url} style={{ width:64,height:64,objectFit:"cover",borderRadius:8,flexShrink:0 }} />}
+                  <div style={{ minWidth:0 }}>
+                    <div style={{ fontWeight:700,color:T2.text,fontSize:14 }}>{r.caption || "(no caption)"}</div>
+                    <div style={{ fontSize:12,color:T2.muted,marginTop:2 }}>By {r.seller_name} · {r.seller_phone}</div>
+                    <div style={{ fontSize:12,color:T2.coral,fontWeight:700,marginTop:4 }}>🚩 {r.reports} report{r.reports>1?"s":""}{r.reports>=3 ? " · hidden from the app" : ""}</div>
+                  </div>
+                </div>
+                <div style={{ display:"flex",gap:8,marginTop:10 }}>
+                  <button onClick={()=>dismissStatusReport(r.id)} style={{ flex:1,padding:9,background:"transparent",border:`1px solid ${T2.border}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer" }}>Dismiss</button>
+                  <button onClick={()=>removeStatusAdmin(r.id)} style={{ flex:1,padding:9,background:T2.coral,color:"#fff",border:"none",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer" }}>Remove Status</button>
+                </div>
+              </div>
+            ))}
+          </>
         )}
 
         {!loading && tab==="notices" && (
