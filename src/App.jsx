@@ -21,7 +21,7 @@ const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
     fetch: (url, opts = {}) => {
       try {
         const tok = getLoginToken();
-        if (tok && String(url).includes("/rest/v1/")) {
+        if (tok && (String(url).includes("/rest/v1/") || (String(url).includes("/storage/v1/") && String(url).includes("rent-docs")))) {
           const h = new Headers(opts.headers || {});
           h.set("Authorization", "Bearer " + tok);
           return fetch(url, { ...opts, headers: h });
@@ -5362,13 +5362,13 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
       const isPdf = file.type === "application/pdf" || (file.name || "").toLowerCase().endsWith(".pdf");
       if (isPdf && file.size > 10 * 1024 * 1024) { showToast("That PDF is over 10 MB. Use a smaller file.", "error"); setDocUploading(false); return; }
       const toUpload = isPdf ? file : await compressImageRT(file);
-      const name = `rtdoc-${Date.now()}-${Math.random().toString(36).slice(2)}.${isPdf ? "pdf" : "jpg"}`;
-      const { error: upErr } = await sb.storage.from("kaziapa-photos").upload(name, toUpload, { contentType: isPdf ? "application/pdf" : "image/jpeg" });
+      // Private bucket: the folder is the landlord's number, so only the landlord and their active team can reach it
+      const name = `${String(landlordPhone || "").replace(/\D/g,"")}/rtdoc-${Date.now()}-${Math.random().toString(36).slice(2)}.${isPdf ? "pdf" : "jpg"}`;
+      const { error: upErr } = await sb.storage.from("rent-docs").upload(name, toUpload, { contentType: isPdf ? "application/pdf" : "image/jpeg" });
       if (upErr) { showToast("Upload failed: " + (upErr.message || "try again"), "error"); setDocUploading(false); return; }
-      const { data:pub } = sb.storage.from("kaziapa-photos").getPublicUrl(name);
       const { error } = await sb.from("rt_documents").insert({
         tenancy_id: tenancy.id, unit_id: activeUnit.id, landlord_phone: landlordPhone,
-        doc_type: docType, label: docLabel.trim(), file_url: pub.publicUrl,
+        doc_type: docType, label: docLabel.trim(), file_url: "private:" + name,
         uploaded_by_phone: phone, uploaded_by_name: userName,
       });
       if (error) { showToast("Save failed: " + error.message, "error"); setDocUploading(false); return; }
@@ -5382,8 +5382,20 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
     setDocUploading(false);
   }
 
+  // Private documents open through a link that works for 10 minutes
+  async function openDoc(d) {
+    const w = window.open("about:blank", "_blank");
+    const { data, error } = await sb.storage.from("rent-docs").createSignedUrl(String(d.file_url).slice(8), 600);
+    if (error || !data || !data.signedUrl) { if (w) w.close(); showToast("Couldn't open it: " + (error && error.message ? error.message : "try again"), "error"); return; }
+    if (w) w.location.href = data.signedUrl; else window.location.href = data.signedUrl;
+  }
+
   async function deleteDocument(id) {
     if (!await askConfirm("Delete this document?")) return;
+    const doc = (documents || []).find(x => x.id === id);
+    if (doc && String(doc.file_url || "").startsWith("private:")) {
+      await sb.storage.from("rent-docs").remove([String(doc.file_url).slice(8)]);
+    }
     const { error } = await sb.from("rt_documents").delete().eq("id", id);
     if (error) { showToast("Delete failed: " + error.message, "error"); return; }
     setDocuments(prev => prev.filter(d => d.id !== id));
@@ -6048,9 +6060,9 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
                 documents.map(d => {
                   const typeLabel = { lease:"📜 Lease", id:"🪪 ID/KRA", inspection:"🔍 Inspection", other:"📎 Other" }[d.doc_type] || "📎";
                   return (
-                    <a key={d.id} href={d.file_url} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", textDecoration:"none", borderBottom:`1px solid ${T.border}` }}>
-                      {/\.pdf($|\?)/i.test(d.file_url || "")
-                  ? <div style={{ width:44, height:44, borderRadius:8, flexShrink:0, background:T.surface, border:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>📄</div>
+                    <a key={d.id} href={String(d.file_url || "").startsWith("private:") ? "#" : d.file_url} onClick={(e)=>{ if (String(d.file_url || "").startsWith("private:")) { e.preventDefault(); openDoc(d); } }} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", textDecoration:"none", borderBottom:`1px solid ${T.border}` }}>
+                      {(String(d.file_url || "").startsWith("private:") || /\.pdf($|\?)/i.test(d.file_url || ""))
+                  ? <div style={{ width:44, height:44, borderRadius:8, flexShrink:0, background:T.surface, border:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 }}>{/\.pdf($|\?)/i.test(d.file_url || "") ? "📄" : "🖼️"}</div>
                   : <img src={d.file_url} style={{ width:44, height:44, objectFit:"cover", borderRadius:8, flexShrink:0 }} />}
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:12, fontWeight:700, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{d.label}</div>
