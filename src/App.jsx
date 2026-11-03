@@ -3678,7 +3678,9 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
                 setTenantRating("genuine"); showToast("Thanks for confirming! Agent's rating updated.");
               }}>✅ Yes — House is Genuine</Btn>
               <button onClick={async()=>{
-                await sb.from("properties").update({ strikes:(selected.strikes||0)+1 }).eq("id", selected.id);
+                const { error:strikeErr } = await sb.from("properties").update({ strikes:(selected.strikes||0)+1 }).eq("id", selected.id);
+                if (strikeErr) { showToast("Couldn't send the report. Try again.","error"); return; }
+                await sb.from("viewings").update({ status:"reported" }).eq("property_id", selected.id).eq("tenant_phone", phone);
                 setTenantRating("fake"); showToast("Reported. Agent received a strike — repeated reports get agents suspended.","error");
               }} style={{ width:"100%", padding:14, background:T.coral, color:"#fff", border:"none", borderRadius:13, fontSize:15, fontWeight:800, cursor:"pointer", marginTop:10 }}>
                 ❌ No — House Not as Described
