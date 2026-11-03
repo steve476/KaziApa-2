@@ -8176,6 +8176,9 @@ function HoodListScreen({ phone, userName, showToast, onBack, onOpenMarket, navS
   const [searchResults, setSearchResults] = useState([]);
   const [showSuggest, setShowSuggest] = useState(false);
   const [sName, setSName] = useState("");
+  const [sLevel, setSLevel] = useState("ESTATE");
+  const [sCounty, setSCounty] = useState("");
+  const [sTown, setSTown] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Restore whatever view (root / county / town) and search the user left off at,
@@ -8223,16 +8226,23 @@ function HoodListScreen({ phone, userName, showToast, onBack, onOpenMarket, navS
 
   async function submitSuggestion() {
     if(!sName.trim()) { showToast("Enter the name first","error"); return; }
+    const countyName = county?.name || sCounty.trim();
+    const townName = town?.name || sTown.trim();
+    if(sLevel!=="COUNTY" && !countyName) { showToast("Enter the county it is in","error"); return; }
+    if(sLevel==="ESTATE" && !townName) { showToast("Enter the town it is in","error"); return; }
     setSubmitting(true);
-    const parentCtx = view==="town" ? town : view==="county" ? county : null;
-    const childLevel = view==="town" ? "ESTATE" : view==="county" ? "TOWN" : "COUNTY";
     const slug = (sName+"-"+Date.now()).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
-    await sb.from("markets").insert({
-      type:"hood", level:childLevel, name:sName.trim(), county: county?.name || sName.trim(),
-      parent_id: parentCtx?.id || null, status:"PENDING", suggested_by_phone:phone, slug
+    const parent_id = sLevel==="TOWN" ? (county?.id || null) : sLevel==="ESTATE" ? (town?.id || null) : null;
+    const where = sLevel==="COUNTY" ? null : [countyName, sLevel==="ESTATE" ? townName : null].filter(Boolean).join(" › ");
+    const { error } = await sb.from("markets").insert({
+      type:"hood", level:sLevel, name:sName.trim(), county: countyName || sName.trim(),
+      parent_id, description: where ? `Suggested under: ${where}` : null,
+      status:"PENDING", suggested_by_phone:phone, slug
     });
+    setSubmitting(false);
+    if(error) { showToast("Couldn't send it: " + error.message, "error"); return; }
     showToast("Suggested! We'll review and add it soon 🙏");
-    setShowSuggest(false); setSName(""); setSubmitting(false);
+    setShowSuggest(false); setSName(""); setSCounty(""); setSTown("");
   }
 
   const crumb = [county?.name, town?.name].filter(Boolean).join(" › ");
@@ -8280,7 +8290,7 @@ function HoodListScreen({ phone, userName, showToast, onBack, onOpenMarket, navS
           </div>
         )}
 
-        <div onClick={()=>setShowSuggest(true)} style={{ marginTop:20,textAlign:"center",padding:14,border:`1.5px dashed ${T.border}`,borderRadius:13,cursor:"pointer" }}>
+        <div onClick={()=>{ setSLevel(view==="county" ? "TOWN" : "ESTATE"); setShowSuggest(true); }} style={{ marginTop:20,textAlign:"center",padding:14,border:`1.5px dashed ${T.border}`,borderRadius:13,cursor:"pointer" }}>
           <div style={{ fontWeight:800,color:T.primary,fontSize:13 }}>➕ Don't see your area?</div>
           <div style={{ fontSize:11,color:T.textMuted,marginTop:2 }}>Suggest it — we'll review and add it</div>
         </div>
@@ -8289,10 +8299,16 @@ function HoodListScreen({ phone, userName, showToast, onBack, onOpenMarket, navS
       {showSuggest && (
         <div style={{ position:"fixed",inset:0,background:T.overlay,zIndex:100,display:"flex",alignItems:"flex-end" }} onClick={()=>setShowSuggest(false)}>
           <div style={{ background:T.card,borderRadius:"20px 20px 0 0",padding:20,width:"100%" }} onClick={e=>e.stopPropagation()}>
-            <div style={{ fontWeight:800,fontSize:16,color:T.text,marginBottom:16 }}>
-              ➕ Suggest {view==="town" ? "an estate/area" : view==="county" ? "a town" : "a county"}
+            <div style={{ fontWeight:800,fontSize:16,color:T.text,marginBottom:12 }}>➕ Suggest your area</div>
+            <div style={{ display:"flex",gap:8,marginBottom:14 }}>
+              {[["ESTATE","Estate / Area"],["TOWN","Town"],["COUNTY","County"]].map(([v,lbl])=>(
+                <div key={v} onClick={()=>setSLevel(v)} style={{ flex:1,textAlign:"center",padding:"9px 4px",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",
+                  border:`1.5px solid ${sLevel===v ? T.primary : T.border}`, background: sLevel===v ? T.primary : "transparent", color: sLevel===v ? "#fff" : T.text }}>{lbl}</div>
+              ))}
             </div>
-            <Field label="Name" value={sName} onChange={setSName} placeholder="e.g. Kaptembwa" />
+            <Field label="Name" value={sName} onChange={setSName} placeholder={sLevel==="ESTATE" ? "e.g. Kaptembwa" : sLevel==="TOWN" ? "e.g. Nakuru Town" : "e.g. Nakuru"} />
+            {sLevel!=="COUNTY" && !county && <Field label="County it is in" value={sCounty} onChange={setSCounty} placeholder="e.g. Nakuru" />}
+            {sLevel==="ESTATE" && !town && <Field label="Town it is in" value={sTown} onChange={setSTown} placeholder="e.g. Nakuru Town" />}
             <Btn onClick={submitSuggestion} disabled={submitting}>{submitting?"Submitting...":"Submit for Review →"}</Btn>
             <button onClick={()=>setShowSuggest(false)} style={{ width:"100%",padding:11,marginTop:8,background:"transparent",border:"none",color:T.textMuted,fontSize:13,cursor:"pointer" }}>Cancel</button>
           </div>
@@ -9575,7 +9591,30 @@ function AdminPanel({ sb, onBack, showToast }) {
     showToast("Notice removed.");
   }
   async function approveHood(h) {
-    const { error } = await sb.from("markets").update({ status:"ACTIVE" }).eq("id",h.id);
+    // A town or estate suggested from the Hood home screen has no parent yet: its location is written in the
+    // description ("Suggested under: County › Town"). Look the parent up by name and attach it.
+    let parentId = null, parentMissing = "";
+    if ((h.level==="TOWN" || h.level==="ESTATE") && !h.parent_id) {
+      const parts = String(h.description || "").replace(/^Suggested under:\s*/i,"").split("›").map(x=>x.trim()).filter(Boolean);
+      const countyName = parts[0] || "", townName = h.level==="ESTATE" ? (parts[1] || "") : "";
+      let countyRow = null;
+      if (countyName) {
+        const { data:cs } = await sb.from("markets").select("id,name").eq("type","hood").eq("level","COUNTY").eq("status","ACTIVE").ilike("name", countyName).limit(1);
+        countyRow = cs && cs[0] || null;
+      }
+      if (h.level==="TOWN") {
+        if (countyRow) parentId = countyRow.id; else parentMissing = countyName || "county";
+      } else {
+        if (townName) {
+          let tq = sb.from("markets").select("id,name").eq("type","hood").eq("level","TOWN").eq("status","ACTIVE").ilike("name", townName);
+          if (countyRow) tq = tq.eq("parent_id", countyRow.id);
+          const { data:ts } = await tq.limit(1);
+          if (ts && ts[0]) parentId = ts[0].id;
+        }
+        if (!parentId) parentMissing = townName || "town";
+      }
+    }
+    const { error } = await sb.from("markets").update({ status:"ACTIVE", ...(parentId ? { parent_id: parentId } : {}) }).eq("id",h.id);
     if (error) { showToast("Approve failed: " + error.message, "error"); return; }
     if (h.suggested_by_phone) {
       await sb.from("notifications").insert({
@@ -9585,7 +9624,8 @@ function AdminPanel({ sb, onBack, showToast }) {
       });
     }
     setHoodSuggestions(prev=>prev.filter(x=>x.id!==h.id));
-    showToast("Hood approved and published.");
+    if (parentMissing) showToast(`Approved, but I couldn't find "${parentMissing}" to attach it to. Approve that first, or set its parent in Supabase.`, "error");
+    else showToast(parentId ? "Hood approved and attached to its parent." : "Hood approved and published.");
   }
   async function rejectHood(h) {
     if(!await askConfirm(`Reject "${h.name}"? It won't be published.`)) return;
@@ -9691,6 +9731,7 @@ function AdminPanel({ sb, onBack, showToast }) {
               <div style={{ fontSize:11,color:T2.muted,textTransform:"capitalize" }}>{h.level}{h.parent ? ` · under ${h.parent.name}` : ""}</div>
               <div style={{ fontWeight:700,color:T2.text,fontSize:14,marginTop:4 }}>{h.name}</div>
               {h.county && <div style={{ fontSize:12,color:T2.muted,marginTop:2 }}>{h.county}</div>}
+              {h.description && <div style={{ fontSize:12,color:T2.text,marginTop:2 }}>{h.description}</div>}
               <div style={{ fontSize:12,color:T2.muted,marginTop:4 }}>Suggested by {h.suggested_by_phone||"unknown"}</div>
               <div style={{ display:"flex",gap:8,marginTop:10 }}>
                 <button onClick={()=>rejectHood(h)} style={{ flex:1,padding:9,background:"transparent",border:`1px solid ${T2.border}`,borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer" }}>Reject</button>
