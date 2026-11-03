@@ -195,7 +195,7 @@ export default async function handler(req, res) {
         // upfront to guarantee a targeted Nudge), assign the pre-agreed
         // target provider instead of the payer themselves.
         const reqRes = await supabaseFetch(
-          `nitume_requests?id=eq.${enc(purchase.listing_id)}&select=customer_phone,target_provider_phone,target_provider_name`
+          `nitume_requests?id=eq.${enc(purchase.listing_id)}&select=customer_phone,target_provider_phone,target_provider_name,title`
         );
         if (!(await logIfFailed(reqRes, "nitume_unlock:lookup"))) break;
         const reqRows = await reqRes.json();
@@ -222,7 +222,39 @@ export default async function handler(req, res) {
                 }
           ),
         });
-        await logIfFailed(nuRes, "nitume_unlock");
+        const nuOk = await logIfFailed(nuRes, "nitume_unlock");
+
+        // Tell the other person: the customer when a provider accepts and pays, the provider when a customer pays for them.
+        if (nuOk && reqRow) {
+          try {
+            const jobTitle = reqRow.title ? `"${reqRow.title}"` : "your Nitume job";
+            let note;
+            if (customerPrePaid) {
+              note = {
+                recipient_phone: reqRow.target_provider_phone,
+                icon: "💰",
+                title: "You've been booked and paid",
+                body: `The customer has paid to confirm you for ${jobTitle}. Open My Nitume to see the details.`,
+              };
+            } else {
+              let providerName = "A provider";
+              const pRes = await supabaseFetch(`users?phone=eq.${enc(purchase.user_id)}&select=name`);
+              if (pRes.ok) { const pRows = await pRes.json(); if (pRows?.[0]?.name) providerName = pRows[0].name; }
+              note = {
+                recipient_phone: reqRow.customer_phone,
+                icon: "✅",
+                title: "Job accepted and paid",
+                body: `${providerName} has accepted and paid to take ${jobTitle}. Open My Nitume to see the details and meet up.`,
+              };
+            }
+            if (note.recipient_phone) {
+              const nRes = await supabaseFetch(`notifications`, { method: "POST", body: JSON.stringify({ ...note, read: false }) });
+              await logIfFailed(nRes, "nitume_unlock:notify");
+            }
+          } catch (e) {
+            console.error("nitume_unlock:notify failed:", e.message);
+          }
+        }
         break;
       }
 
