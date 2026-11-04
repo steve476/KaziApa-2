@@ -95,6 +95,14 @@ export default async function handler(req, res) {
       del("market_spaces", "phone"), del("nitume_guide_markets", "phone"), del("notifications", "recipient_phone"),
       del("push_subscriptions", "phone"), del("blocked_users", "blocker_phone"), del("blocked_users", "blocked_phone"), del("otp_codes", "phone"),
     ]);
+    // other people's replies to my requests must go before the requests themselves
+    await step("delete replies to my requests", async () => {
+      const mine = await sel(`requests?${IN("buyer_phone")}&select=id`);
+      const ids = mine.map((r) => r.id).filter(Boolean);
+      for (let i = 0; i < ids.length; i += 50) {
+        await mutate("DELETE", `request_replies?request_id=in.(${ids.slice(i, i + 50).map(encodeURIComponent).join(",")})`);
+      }
+    });
     await Promise.all([
       del("kiosks", "phone"), del("statuses", "seller_phone"), del("requests", "buyer_phone"),
       del("properties", "agent_phone"), del("listings", "seller_phone"), del("listings", "created_by_phone"),
