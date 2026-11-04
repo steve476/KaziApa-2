@@ -5361,7 +5361,14 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
     try {
       const isPdf = file.type === "application/pdf" || (file.name || "").toLowerCase().endsWith(".pdf");
       if (isPdf && file.size > 10 * 1024 * 1024) { showToast("That PDF is over 10 MB. Use a smaller file.", "error"); setDocUploading(false); return; }
-      const toUpload = isPdf ? file : await compressImageRT(file);
+      // Android can refuse to upload a file straight from the picker ("Failed to fetch"), so a PDF is copied into memory first
+      let toUpload;
+      if (isPdf) {
+        try { toUpload = new Blob([await file.arrayBuffer()], { type: "application/pdf" }); }
+        catch(e) { showToast("Couldn't read that PDF. Save it to your phone first, then try again.", "error"); setDocUploading(false); return; }
+      } else {
+        toUpload = await compressImageRT(file);
+      }
       // Private bucket: the folder is the landlord's number, so only the landlord and their active team can reach it
       const name = `${String(landlordPhone || "").replace(/\D/g,"")}/rtdoc-${Date.now()}-${Math.random().toString(36).slice(2)}.${isPdf ? "pdf" : "jpg"}`;
       const { error: upErr } = await sb.storage.from("rent-docs").upload(name, toUpload, { contentType: isPdf ? "application/pdf" : "image/jpeg" });
