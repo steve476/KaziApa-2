@@ -1488,6 +1488,23 @@ export default function KaziApa() {
     checkBanned();
   },[authStep,town,catFilter]);
 
+  async function deleteMyAccount() {
+    if(!await askConfirm("Delete your KaziApa account? Your profile, listings, statuses, chats and photos will be permanently removed. This cannot be undone.", { okLabel:"Continue" })) return;
+    const word = await askPrompt("Type DELETE to confirm", { okLabel:"Delete my account" });
+    if(!word || word.trim().toUpperCase() !== "DELETE") { if(word) showToast("Not deleted: you must type DELETE","error"); return; }
+    const tok = getLoginToken();
+    if(!tok) { askNotice("Please log out, log in again with your SMS code, then try again."); return; }
+    try {
+      const res = await fetch("/api/delete-account", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:tok, confirm:"DELETE" }) });
+      const d = await res.json().catch(()=>({}));
+      if(!d.success) { askNotice(d.error || "Could not delete your account. Please try again."); return; }
+      localStorage.removeItem("kaziapa_user"); localStorage.removeItem("kaziapa_token");
+      sessionStorage.removeItem("kaziapa_screen"); sessionStorage.removeItem("kaziapa_nav");
+      navHistoryRef.current=[]; setAuthStep("phone"); setUserName(""); setPhone(""); setOtp(["","","","","",""]);
+      showToast("Your account has been deleted.");
+    } catch(e) { askNotice("No connection. Please try again."); }
+  }
+
   async function checkBanned() {
     if(!phone) return;
     const { data } = await sb.from("users").select("banned").eq("phone",phone).single();
@@ -3006,6 +3023,7 @@ export default function KaziApa() {
               ...(ADMIN_PHONES.includes(phone) ? [{ icon:"🛠️",label:"Admin Panel", action:()=>nav("admin","profile"), accent:true }] : []),
               { icon:"💡",label:"Why KaziApa",         action:()=>nav("whykaziapa","profile") },
               { icon:"📧",label:"Contact Us",          action:()=>nav("contact","profile") },
+              { icon:"🗑️",label:"Delete my account",  action:deleteMyAccount },
               { icon:"🚪",label:"Log Out",            action:()=>setShowLogoutConfirm(true) },
             ].map((item,i)=>(
               <div key={i} onClick={item.action} style={{ background:T.card,borderRadius:13,padding:"14px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:13,cursor:"pointer",border:item.accent?`1px solid ${T.accent}`:item.highlight?`1px solid ${T.primary}`:`1px solid ${T.border}` }}>
@@ -5361,14 +5379,7 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
     try {
       const isPdf = file.type === "application/pdf" || (file.name || "").toLowerCase().endsWith(".pdf");
       if (isPdf && file.size > 10 * 1024 * 1024) { showToast("That PDF is over 10 MB. Use a smaller file.", "error"); setDocUploading(false); return; }
-      // Android can refuse to upload a file straight from the picker ("Failed to fetch"), so a PDF is copied into memory first
-      let toUpload;
-      if (isPdf) {
-        try { toUpload = new Blob([await file.arrayBuffer()], { type: "application/pdf" }); }
-        catch(e) { showToast("Couldn't read that PDF. Save it to your phone first, then try again.", "error"); setDocUploading(false); return; }
-      } else {
-        toUpload = await compressImageRT(file);
-      }
+      const toUpload = isPdf ? file : await compressImageRT(file);
       // Private bucket: the folder is the landlord's number, so only the landlord and their active team can reach it
       const name = `${String(landlordPhone || "").replace(/\D/g,"")}/rtdoc-${Date.now()}-${Math.random().toString(36).slice(2)}.${isPdf ? "pdf" : "jpg"}`;
       const { error: upErr } = await sb.storage.from("rent-docs").upload(name, toUpload, { contentType: isPdf ? "application/pdf" : "image/jpeg" });
