@@ -31,6 +31,8 @@ async function mutate(method, path, body) {
   }
 }
 
+export const config = { maxDuration: 60 };
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ success: false, error: "Method not allowed" });
   const body = req.body || {};
@@ -60,63 +62,43 @@ export default async function handler(req, res) {
         try { files.add(decodeURIComponent(m[1])); } catch (e) { files.add(m[1]); }
       }
     };
-    for (const [t, col] of [["users", "phone"], ["listings", "seller_phone"], ["statuses", "seller_phone"], ["kiosks", "phone"], ["properties", "agent_phone"], ["requests", "buyer_phone"]]) {
+    await Promise.all([["users", "phone"], ["listings", "seller_phone"], ["statuses", "seller_phone"], ["kiosks", "phone"], ["properties", "agent_phone"], ["requests", "buyer_phone"]].map(async ([t, col]) => {
       try { scan(await sel(`${t}?${IN(col)}&select=*`)); } catch (e) { console.error("delete-account scan", t, e.message); }
-    }
+    }));
 
     const failed = [];
     const step = async (name, fn) => { try { await fn(); } catch (e) { failed.push(name); console.error("delete-account step failed:", name, e.message); } };
     const del = (t, col) => step(`delete ${t}`, () => mutate("DELETE", `${t}?${IN(col)}`));
     const anon = (t, col, val = "deleted") => step(`anonymize ${t}.${col}`, () => mutate("PATCH", `${t}?${IN(col)}`, { [col]: val }));
 
-    // 3. Landlord's own Rent Tracker data (children first)
+    // 3. Landlord's own Rent Tracker data (children first, one after another)
     for (const t of ["rt_ledger", "rt_documents", "rt_communications", "rt_maintenance_requests", "rt_audit_log", "rt_tenant_requests", "rt_tenancies", "rt_units", "rt_properties", "rt_settings"]) await del(t, "landlord_phone");
-    await del("rt_team_members", "owner_phone");
-    await del("rt_team_members", "member_phone");
+    await Promise.all([del("rt_team_members", "owner_phone"), del("rt_team_members", "member_phone")]);
 
-    // 4. As tenant / team member in someone else's records: keep their records, remove the phone
-    await anon("rt_tenancies", "tenant_phone");
-    await step("clear emergency contact", () => mutate("PATCH", `rt_tenancies?${IN("emergency_contact_phone")}`, { emergency_contact_phone: null }));
-    await anon("rt_ledger", "tenant_phone");
-    await anon("rt_maintenance_requests", "tenant_phone");
-    await anon("rt_tenant_requests", "tenant_phone");
-    await anon("rt_documents", "uploaded_by_phone");
-    await anon("rt_communications", "logged_by_phone");
-    await anon("rt_audit_log", "actor_phone");
-
-    // 5. Marketplace and community
-    for (const col of ["buyer_phone", "seller_phone", "sender_phone"]) await del("chats", col);
-    await del("kiosk_markets", "kiosk_phone");
-    await del("kiosks", "phone");
-    await del("statuses", "seller_phone");
-    await del("listing_reports", "reporter_phone");
-    await del("listing_unlocks", "tenant_phone");
-    await del("request_replies", "seller_phone");
-    await del("requests", "buyer_phone");
-    await del("viewings", "agent_phone");
-    await del("viewings", "tenant_phone");
-    await del("properties", "agent_phone");
-    await del("listings", "seller_phone");
-    await del("listings", "created_by_phone");
-    await del("market_members", "phone");
-    await del("market_notice_reports", "reporter_phone");
-    await del("market_notices", "phone");
-    await del("market_spaces", "phone");
-    await del("nitume_guide_markets", "phone");
-    await del("notifications", "recipient_phone");
-    await del("push_subscriptions", "phone");
-    await del("blocked_users", "blocker_phone");
-    await del("blocked_users", "blocked_phone");
-    await del("otp_codes", "phone");
-
-    // 6. Records other people or the law still need: keep, without the phone number
-    await anon("orders", "buyer_phone");
-    await anon("orders", "seller_phone");
-    await anon("purchases", "phone");
-    await anon("nitume_requests", "customer_phone");
-    await anon("nitume_requests", "provider_phone");
-    await step("clear nitume target", () => mutate("PATCH", `nitume_requests?${IN("target_provider_phone")}`, { target_provider_phone: null }));
-    await step("clear suggested hood phone", () => mutate("PATCH", `markets?${IN("suggested_by_phone")}`, { suggested_by_phone: null }));
+    // 4-5. Everything that does not depend on anything else, all at once
+    await Promise.all([
+      // tenant / team member in someone else's records: keep the records, remove the phone
+      anon("rt_tenancies", "tenant_phone"),
+      step("clear emergency contact", () => mutate("PATCH", `rt_tenancies?${IN("emergency_contact_phone")}`, { emergency_contact_phone: null })),
+      anon("rt_ledger", "tenant_phone"), anon("rt_maintenance_requests", "tenant_phone"), anon("rt_tenant_requests", "tenant_phone"),
+      anon("rt_documents", "uploaded_by_phone"), anon("rt_communications", "logged_by_phone"), anon("rt_audit_log", "actor_phone"),
+      // records others or the law still need: keep, without the phone number
+      anon("orders", "buyer_phone"), anon("orders", "seller_phone"), anon("purchases", "phone"),
+      anon("nitume_requests", "customer_phone"), anon("nitume_requests", "provider_phone"),
+      step("clear nitume target", () => mutate("PATCH", `nitume_requests?${IN("target_provider_phone")}`, { target_provider_phone: null })),
+      step("clear suggested hood phone", () => mutate("PATCH", `markets?${IN("suggested_by_phone")}`, { suggested_by_phone: null })),
+      // things that point at listings / properties / kiosks must go first
+      del("chats", "buyer_phone"), del("chats", "seller_phone"), del("chats", "sender_phone"),
+      del("kiosk_markets", "kiosk_phone"), del("viewings", "agent_phone"), del("viewings", "tenant_phone"),
+      del("request_replies", "seller_phone"), del("listing_reports", "reporter_phone"), del("listing_unlocks", "tenant_phone"),
+      del("market_members", "phone"), del("market_notice_reports", "reporter_phone"), del("market_notices", "phone"),
+      del("market_spaces", "phone"), del("nitume_guide_markets", "phone"), del("notifications", "recipient_phone"),
+      del("push_subscriptions", "phone"), del("blocked_users", "blocker_phone"), del("blocked_users", "blocked_phone"), del("otp_codes", "phone"),
+    ]);
+    await Promise.all([
+      del("kiosks", "phone"), del("statuses", "seller_phone"), del("requests", "buyer_phone"),
+      del("properties", "agent_phone"), del("listings", "seller_phone"), del("listings", "created_by_phone"),
+    ]);
 
     // 7. Files: photos (avatar, statuses, listings) and the private rent-docs folder
     await step("delete photos", async () => {
