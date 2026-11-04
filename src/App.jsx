@@ -1494,6 +1494,7 @@ export default function KaziApa() {
     if(!word || word.trim().toUpperCase() !== "DELETE") { if(word) showToast("Not deleted: you must type DELETE","error"); return; }
     const tok = getLoginToken();
     if(!tok) { askNotice("Please log out, log in again with your SMS code, then try again."); return; }
+    showToast("Deleting your account... please wait");
     try {
       const res = await fetch("/api/delete-account", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:tok, confirm:"DELETE" }) });
       const d = await res.json().catch(()=>({}));
