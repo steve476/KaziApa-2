@@ -1,6 +1,6 @@
 // api/refresh-token.js
 // Swaps a still-valid login token for a fresh one so people are not asked for an SMS code every 30 days.
-// Refused when: the token is fake or expired, the account is banned, or it is more than
+// Refused when: the token is fake or expired, the account is banned or deleted, or it is more than
 // MAX_SESSION_DAYS since the last SMS code.
 import { signLoginToken, checkLoginToken, MAX_SESSION_DAYS } from "./_login-token.js";
 
@@ -34,8 +34,13 @@ export default async function handler(req, res) {
     const fp = claims.phone;
     const variants = [fp, "0" + fp.slice(4), fp.slice(1)].map(encodeURIComponent).join(",");
     const r = await db(`users?phone=in.(${variants})&select=banned`);
-    const rows = r.ok ? await r.json() : [];
-    if (Array.isArray(rows) && rows.some((u) => u.banned)) {
+    if (!r.ok) throw new Error("users lookup " + r.status);
+    const rows = await r.json();
+    // No user row = the account was deleted: no fresh token
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return res.status(401).json({ success: false, error: "Please log in again." });
+    }
+    if (rows.some((u) => u.banned)) {
       return res.status(403).json({ success: false, error: "Account suspended." });
     }
   } catch (e) {
