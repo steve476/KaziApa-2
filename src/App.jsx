@@ -7380,16 +7380,20 @@ function NitumeScreen({ town, showToast, onBack, userName, phone }) {
   }
 
   async function markDelivered(req) {
-    const pin = String(Math.floor(1000+Math.random()*9000));
-    await sb.from("nitume_requests").update({ status:"delivered", pin_code:pin }).eq("id",req.id);
+    const { error:delErr } = await sb.rpc("nitume_mark_delivered", { req_id:String(req.id) });
+    if(delErr) { showToast("Couldn't mark it delivered. Try again.","error"); return; }
     showToast("Marked as delivered. Ask the customer for their PIN when you meet.");
     loadMyNitume();
   }
 
   async function confirmPin(req) {
     const entered = (pinInputs[req.id]||"").trim();
-    if(entered !== req.pin_code) { showToast("PIN doesn't match. Ask the customer again.","error"); return; }
-    await sb.from("nitume_requests").update({ status:"completed", completed_at:new Date().toISOString() }).eq("id",req.id);
+    if(!/^\d{4}$/.test(entered)) { showToast("Enter the 4-digit PIN","error"); return; }
+    const { data:pinResult, error:pinErr } = await sb.rpc("nitume_confirm_pin", { req_id:String(req.id), entered });
+    if(pinErr) { showToast("Couldn't check the PIN. Try again.","error"); return; }
+    if(pinResult==="wrong") { showToast("PIN doesn't match. Ask the customer again.","error"); return; }
+    if(pinResult==="locked") { showToast("Too many wrong tries. Contact KaziApa support.","error"); return; }
+    if(pinResult!=="ok") { showToast("You can't complete this job.","error"); return; }
     const { data:u } = await sb.from("users").select("nitume_completed_count").eq("phone",phone).single();
     await sb.from("users").update({ nitume_completed_count:(u?.nitume_completed_count||0)+1 }).eq("phone",phone);
     showToast("Job completed! 🎉");
@@ -7548,12 +7552,7 @@ function NitumeScreen({ town, showToast, onBack, userName, phone }) {
                       </a>
                     </div>
                   )}
-                  {r.status==="delivered" && (
-                    <div style={{ marginTop:10, background:T.accentSoft, borderRadius:10, padding:10, textAlign:"center" }}>
-                      <div style={{ fontSize:11, color:T.textMuted, marginBottom:4 }}>Give this PIN to the provider on receipt:</div>
-                      <div style={{ fontSize:22, fontWeight:900, color:T.accentDark, letterSpacing:4 }}>{r.pin_code}</div>
-                    </div>
-                  )}
+                  {r.status==="delivered" && <NitumePin id={r.id} mt={10} />}
                 </div>
               ))
             }
@@ -7729,12 +7728,7 @@ function NitumeScreen({ town, showToast, onBack, userName, phone }) {
                 </a>
               </div>
             )}
-            {viewReq.status==="delivered" && (
-              <div style={{ marginTop:12, background:T.accentSoft, borderRadius:10, padding:10, textAlign:"center" }}>
-                <div style={{ fontSize:11, color:T.textMuted, marginBottom:4 }}>Give this PIN to the provider on receipt:</div>
-                <div style={{ fontSize:22, fontWeight:900, color:T.accentDark, letterSpacing:4 }}>{viewReq.pin_code}</div>
-              </div>
-            )}
+            {viewReq.status==="delivered" && <NitumePin id={viewReq.id} mt={12} />}
             {viewReq.status==="open" && (
               <button onClick={()=>cancelNitumeRequest(viewReq.id)} disabled={cancelling}
                 style={{ width:"100%", padding:13, marginTop:16, background:cancelling?T.border:"#FDECEA", color:"#B3261E", border:"1px solid #F5C2C0", borderRadius:12, fontSize:14, fontWeight:800, cursor:cancelling?"default":"pointer" }}>
@@ -8352,6 +8346,22 @@ function HoodListScreen({ phone, userName, showToast, onBack, onOpenMarket, navS
   );
 }
 
+function NitumePin({ id, mt }) {
+  const [pin, setPin] = useState(null);
+  useEffect(()=>{
+    let alive = true;
+    sb.from("nitume_pins").select("pin").eq("request_id", String(id)).limit(1).then(({ data })=>{ if(alive && data && data[0]) setPin(data[0].pin); });
+    return ()=>{ alive = false; };
+  },[id]);
+  if(!pin) return null;
+  return (
+    <div style={{ marginTop:mt||10, background:T.accentSoft, borderRadius:10, padding:10, textAlign:"center" }}>
+      <div style={{ fontSize:11, color:T.textMuted, marginBottom:4 }}>Give this PIN to the provider on receipt:</div>
+      <div style={{ fontSize:22, fontWeight:900, color:T.accentDark, letterSpacing:4 }}>{pin}</div>
+    </div>
+  );
+}
+
 const MARKET_ROLES = ["Buyer","Seller","Retailer","Wholesaler","Shop Owner","Agent","Supplier","Hotel/Food Vendor","Transporter","Shopper","Service Provider","Worker","Other"];
 const HOOD_ROLES = ["Resident","Buyer","Seller","Fundi/Service Provider","Landlord/Agent","Job Seeker","Employer","Shop Owner","Transporter","Other"];
 const NON_KIOSK_ROLES = ["Buyer","Worker","Resident","Job Seeker"]; // roles that don't imply "I have a stall/business here"
@@ -8410,6 +8420,7 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
   const [placeSimilar, setPlaceSimilar] = useState([]);
   const [savingPlace, setSavingPlace] = useState(false);
   const [joinRequests, setJoinRequests] = useState([]);
+  const [joinNote, setJoinNote] = useState("");
 
   useEffect(()=>{ load(); },[market.id]);
   useEffect(()=>{ loadTab(tab); },[tab, market.id]);
@@ -8469,8 +8480,8 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
       setKids(ks||[]);
     }
     if(isPlaceAdmin) {
-      const { data:rq } = await sb.from("market_members").select("id,phone,roles,created_at").eq("market_id",market.id).eq("status","PENDING").order("created_at");
-      setJoinRequests(rq||[]);
+      const { data:rq } = await sb.from("market_members").select("id,phone,roles,join_note,created_at").eq("market_id",market.id).eq("status","APPROVED").order("created_at");
+      setJoinRequests((rq||[]).filter(x=>d9(x.phone)!==d9(market.suggested_by_phone) && d9(x.phone)!==d9(phone)));
     }
     setLoading(false);
   }
@@ -8488,7 +8499,7 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
   async function confirmRoles() {
     if(pickedRoles.length===0) { showToast("Pick at least one role","error"); return; }
     setSavingRoles(true);
-    const up = await sb.from("market_members").upsert({ phone, market_id:market.id, roles:pickedRoles }, { onConflict:"phone,market_id" }).select("status").limit(1);
+    const up = await sb.from("market_members").upsert({ phone, market_id:market.id, roles:pickedRoles, ...(isPlace && joinNote.trim() ? { join_note: joinNote.trim().slice(0,60) } : {}) }, { onConflict:"phone,market_id" }).select("status").limit(1);
     const memStatus = (up.data && up.data[0] && up.data[0].status) || (market.place_type ? "PENDING" : "APPROVED");
     if(memStatus==="PENDING" || memStatus==="REJECTED") {
       setSavingRoles(false); setShowRoleModal(false); setPending(memStatus==="PENDING");
@@ -8671,11 +8682,12 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
     load();
   }
 
-  async function decideJoin(r, ok) {
-    const { error } = await sb.from("market_members").update({ status: ok ? "APPROVED" : "REJECTED" }).eq("id", r.id);
-    if(error) { showToast("Couldn't update. Try again.","error"); return; }
+  async function removeMember(r) {
+    if(!await askConfirm("Remove this member from "+market.name+"? They will not be able to rejoin.", { okLabel:"Remove" })) return;
+    const { error } = await sb.from("market_members").update({ status:"REJECTED" }).eq("id", r.id);
+    if(error) { showToast("Couldn't remove. Try again.","error"); return; }
     setJoinRequests(x=>x.filter(y=>y.id!==r.id));
-    showToast(ok ? "Approved" : "Declined");
+    showToast("Member removed");
   }
 
   async function reportPlace() {
@@ -8696,7 +8708,7 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
           {market.description && <div style={{ fontSize:13,color:T.textMid,marginTop:8,lineHeight:1.5 }}>{market.description}</div>}
           {market.type==="hood" && !market.description && <div style={{ fontSize:13,color:T.textMid,marginTop:8,lineHeight:1.5 }}>Your local community space — share notices, find jobs, buy & sell, and connect with neighbors here.</div>}
           {isPlace && pending && <div style={{ marginTop:12,padding:11,background:T.successSoft,color:T.success,borderRadius:11,fontSize:13,fontWeight:700,textAlign:"center" }}>Request sent. Waiting for the building admin to approve you.</div>}
-          {isPlace && !joined && !pending && <button onClick={openRolePicker} style={{ marginTop:12,width:"100%",padding:11,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:700,fontSize:13,cursor:"pointer" }}>Request to join</button>}
+          {isPlace && !joined && !pending && <button onClick={openRolePicker} style={{ marginTop:12,width:"100%",padding:11,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:700,fontSize:13,cursor:"pointer" }}>Join this place</button>}
           {!isPlace && !joined && !pending && <button onClick={openRolePicker} style={{ marginTop:12,width:"100%",padding:11,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:700,fontSize:13,cursor:"pointer" }}>{market.type==="hood" ? "+ Join This Hood" : "+ Join This Market"}</button>}
           {joined && (
             <div style={{ marginTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
@@ -8739,14 +8751,14 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
 
         {isPlaceAdmin && joinRequests.length>0 && (
           <div style={{ background:T.card,borderRadius:13,padding:14,border:`1px solid ${T.border}`,marginBottom:16 }}>
-            <div style={{ fontWeight:800,fontSize:14,color:T.text,marginBottom:8 }}>Join requests ({joinRequests.length})</div>
+            <div style={{ fontWeight:800,fontSize:14,color:T.text,marginBottom:8 }}>Members ({joinRequests.length})</div>
             {joinRequests.map(r=>(
-              <div key={r.id} style={{ padding:"9px 0",borderTop:`1px solid ${T.border}` }}>
-                <div style={{ fontSize:13,color:T.text,fontWeight:700 }}>{maskPhone(r.phone)} <span style={{ fontWeight:500,color:T.textMuted,fontSize:11 }}>{(r.roles||[]).join(", ")}</span></div>
-                <div style={{ display:"flex",gap:8,marginTop:6 }}>
-                  <div onClick={()=>decideJoin(r,true)} style={{ flex:1,textAlign:"center",padding:8,borderRadius:9,background:T.primary,color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer" }}>Approve</div>
-                  <div onClick={()=>decideJoin(r,false)} style={{ flex:1,textAlign:"center",padding:8,borderRadius:9,border:`1px solid ${T.border}`,color:T.coral,fontSize:12,fontWeight:800,cursor:"pointer" }}>Decline</div>
+              <div key={r.id} style={{ padding:"9px 0",borderTop:`1px solid ${T.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8 }}>
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:13,color:T.text,fontWeight:700 }}>{maskPhone(r.phone)}{r.join_note ? <span style={{ fontWeight:600,color:T.primary }}> · {r.join_note}</span> : null}</div>
+                  <div style={{ fontWeight:500,color:T.textMuted,fontSize:11 }}>{(r.roles||[]).join(", ")}</div>
                 </div>
+                <div onClick={()=>removeMember(r)} style={{ flexShrink:0,padding:"7px 12px",borderRadius:9,border:`1px solid ${T.border}`,color:T.coral,fontSize:12,fontWeight:800,cursor:"pointer" }}>Remove</div>
               </div>
             ))}
           </div>
@@ -9067,6 +9079,7 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
                     );
                   })}
                 </div>
+                {isPlace && <Field label="House or floor number (optional)" value={joinNote} onChange={setJoinNote} placeholder="e.g. B4 or 3rd floor" />}
                 <Btn onClick={confirmRoles} disabled={savingRoles}>{savingRoles?"Saving...":joined?"Update Roles →":(market.type==="hood"?"Join Hood →":"Join Market →")}</Btn>
                 <button onClick={()=>setShowRoleModal(false)} style={{ width:"100%",padding:11,marginTop:8,background:"transparent",border:"none",color:T.textMuted,fontSize:13,cursor:"pointer" }}>Cancel</button>
               </>
