@@ -3082,7 +3082,7 @@ export default function KaziApa() {
           onOpenMarket={(m)=>{ setActiveMarket(m); nav("marketProfile","home"); }} />
       )}
       {screen==="marketProfile" && activeMarket && (
-        <MarketProfileScreen market={activeMarket} phone={phone} userName={userName} showToast={showToast}
+        <MarketProfileScreen key={activeMarket.id} onOpenPlace={(m)=>setActiveMarket(m)} market={activeMarket} phone={phone} userName={userName} showToast={showToast}
           onBack={()=>nav(activeMarket.type==="hood" ? "hood" : "market","home")}
           onAddBusiness={()=>{ nav("kiosk","profile"); }}
           onRequestGuide={()=>{
@@ -8043,7 +8043,8 @@ function MarketListScreen({ phone, userName, town, showToast, onBack, onOpenMark
 
   async function loadMyMarkets() {
     setMyMarketsLoading(true);
-    const { data:mem } = await sb.from("market_members").select("market_id").eq("phone",phone);
+    const { data:memAll } = await sb.from("market_members").select("market_id,status").eq("phone",phone);
+    const mem = (memAll||[]).filter(x=>x.status!=="PENDING" && x.status!=="REJECTED");
     if(mem && mem.length) {
       const { data:ms } = await sb.from("markets").select("*").in("id", mem.map(m=>m.market_id)).eq("status","ACTIVE");
       setMyMarkets(ms||[]);
@@ -8355,7 +8356,11 @@ const MARKET_ROLES = ["Buyer","Seller","Retailer","Wholesaler","Shop Owner","Age
 const HOOD_ROLES = ["Resident","Buyer","Seller","Fundi/Service Provider","Landlord/Agent","Job Seeker","Employer","Shop Owner","Transporter","Other"];
 const NON_KIOSK_ROLES = ["Buyer","Worker","Resident","Job Seeker"]; // roles that don't imply "I have a stall/business here"
 
-function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAddBusiness, onRequestGuide }) {
+function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAddBusiness, onRequestGuide, onOpenPlace }) {
+  const d9 = (x)=>String(x||"").replace(/\D/g,"").slice(-9);
+  const isPlace = !!market.place_type;
+  const isPlaceAdmin = isPlace && (d9(market.suggested_by_phone)===d9(phone) || ADMIN_PHONES.includes(phone));
+  const maskPhone = (x)=>String(x||"").replace(/\D/g,"").replace(/^(\d{3})\d+(\d{3})$/,"$1***$2");
   const [tab, setTab] = useState(market.type==="hood" ? "notices" : "directory");
   const [kiosks, setKiosks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -8397,6 +8402,14 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
   const [spaceError, setSpaceError] = useState("");
   const [tabLoading, setTabLoading] = useState(false);
   const [loadedTabs, setLoadedTabs] = useState({});
+  const [pending, setPending] = useState(false);
+  const [kids, setKids] = useState([]);
+  const [showAddPlace, setShowAddPlace] = useState(false);
+  const [placeName, setPlaceName] = useState("");
+  const [placeType, setPlaceType] = useState("APARTMENT");
+  const [placeSimilar, setPlaceSimilar] = useState([]);
+  const [savingPlace, setSavingPlace] = useState(false);
+  const [joinRequests, setJoinRequests] = useState([]);
 
   useEffect(()=>{ load(); },[market.id]);
   useEffect(()=>{ loadTab(tab); },[tab, market.id]);
@@ -8448,9 +8461,17 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
       const { data:ks } = await sb.from("kiosks").select("*").in("phone", km.map(r=>r.kiosk_phone));
       setKiosks(ks||[]);
     } else setKiosks([]);
-    const { data:mem } = await sb.from("market_members").select("id,roles").eq("phone",phone).eq("market_id",market.id).limit(1);
-    if(mem && mem.length) { setJoined(true); setMyRoles(mem[0].roles||[]); }
-    else { setJoined(false); setMyRoles([]); }
+    const { data:mem } = await sb.from("market_members").select("id,roles,status").eq("phone",phone).eq("market_id",market.id).limit(1);
+    if(mem && mem.length) { const st = mem[0].status || "APPROVED"; setPending(st==="PENDING"); setJoined(st==="APPROVED"); setMyRoles(mem[0].roles||[]); }
+    else { setJoined(false); setPending(false); setMyRoles([]); }
+    if(market.type==="hood" && market.level==="ESTATE" && !market.place_type) {
+      const { data:ks } = await sb.from("markets").select("*").eq("parent_id",market.id).not("place_type","is",null).eq("status","ACTIVE").order("name");
+      setKids(ks||[]);
+    }
+    if(isPlaceAdmin) {
+      const { data:rq } = await sb.from("market_members").select("id,phone,roles,created_at").eq("market_id",market.id).eq("status","PENDING").order("created_at");
+      setJoinRequests(rq||[]);
+    }
     setLoading(false);
   }
 
@@ -8467,8 +8488,14 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
   async function confirmRoles() {
     if(pickedRoles.length===0) { showToast("Pick at least one role","error"); return; }
     setSavingRoles(true);
-    await sb.from("market_members").upsert({ phone, market_id:market.id, roles:pickedRoles }, { onConflict:"phone,market_id" });
-    setJoined(true); setMyRoles(pickedRoles);
+    const up = await sb.from("market_members").upsert({ phone, market_id:market.id, roles:pickedRoles }, { onConflict:"phone,market_id" }).select("status").limit(1);
+    const memStatus = (up.data && up.data[0] && up.data[0].status) || (market.place_type ? "PENDING" : "APPROVED");
+    if(memStatus==="PENDING" || memStatus==="REJECTED") {
+      setSavingRoles(false); setShowRoleModal(false); setPending(memStatus==="PENDING");
+      showToast(memStatus==="PENDING" ? "Request sent. The building admin will approve you." : "You cannot join this place.", memStatus==="PENDING" ? "success" : "error");
+      return;
+    }
+    setJoined(true); setPending(false); setMyRoles(pickedRoles);
     showToast(`Joined ${market.name} 🏬`);
     setSavingRoles(false);
 
@@ -8612,6 +8639,52 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
     loadTab("spaces");
   }
 
+  async function findSimilar(text) {
+    setPlaceName(text);
+    const t = String(text||"").trim();
+    if(t.length < 3) { setPlaceSimilar([]); return; }
+    const w = t.replace(/[%_,()]/g," ").trim().split(/\s+/)[0];
+    const { data } = await sb.from("markets").select("*").eq("parent_id",market.id).not("place_type","is",null).eq("status","ACTIVE").ilike("name",`%${w}%`).limit(5);
+    setPlaceSimilar(data||[]);
+  }
+
+  async function submitPlace() {
+    const name = placeName.trim();
+    if(name.length < 3) { showToast("Enter the name first","error"); return; }
+    setSavingPlace(true);
+    const slug = (name+"-"+Date.now()).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
+    const { data, error } = await sb.from("markets").insert({
+      type:"hood", level:"ESTATE", name, county:market.county, town:market.name, parent_id:market.id,
+      place_type:placeType, status:"ACTIVE", source_type:"COMMUNITY_SUGGESTED", market_level:"COMMUNITY",
+      suggested_by_phone:phone, slug, description:`${placeType==="HOSTEL"?"Hostel":"Apartment"} in ${market.name}`
+    }).select().limit(1);
+    setSavingPlace(false);
+    if(error) {
+      const m = String(error.message||"");
+      showToast(m.includes("DUPLICATE_PLACE") ? "This place already exists here. Pick it from the list." : m.includes("DAILY_LIMIT") ? "You have added 5 places today. Try again tomorrow." : m.includes("BAD_PLACE_NAME") ? "Use the plain name only: no links, phone numbers or symbols." : "Couldn't add it: "+m, "error");
+      return;
+    }
+    const created = data && data[0];
+    if(created) await sb.from("market_members").upsert({ phone, market_id:created.id, roles:["Resident"] }, { onConflict:"phone,market_id" });
+    showToast("Added! Your place is live.");
+    setShowAddPlace(false); setPlaceName(""); setPlaceSimilar([]);
+    load();
+  }
+
+  async function decideJoin(r, ok) {
+    const { error } = await sb.from("market_members").update({ status: ok ? "APPROVED" : "REJECTED" }).eq("id", r.id);
+    if(error) { showToast("Couldn't update. Try again.","error"); return; }
+    setJoinRequests(x=>x.filter(y=>y.id!==r.id));
+    showToast(ok ? "Approved" : "Declined");
+  }
+
+  async function reportPlace() {
+    if(!await askConfirm("Report this place as fake, a duplicate or inappropriate?", { okLabel:"Report" })) return;
+    const { error } = await sb.from("place_reports").insert({ market_id:market.id, reporter_phone:phone });
+    if(error && !String(error.message||"").includes("duplicate")) { showToast("Couldn't send the report","error"); return; }
+    showToast("Thanks. We will review it.");
+  }
+
   const myKiosk = kiosks.find(k=>k.phone===phone);
 
   return (
@@ -8622,7 +8695,9 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
           <div style={{ fontSize:13,color:T.textMuted }}>📍 {[market.town,market.county].filter(Boolean).join(", ")}</div>
           {market.description && <div style={{ fontSize:13,color:T.textMid,marginTop:8,lineHeight:1.5 }}>{market.description}</div>}
           {market.type==="hood" && !market.description && <div style={{ fontSize:13,color:T.textMid,marginTop:8,lineHeight:1.5 }}>Your local community space — share notices, find jobs, buy & sell, and connect with neighbors here.</div>}
-          {!joined && <button onClick={openRolePicker} style={{ marginTop:12,width:"100%",padding:11,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:700,fontSize:13,cursor:"pointer" }}>{market.type==="hood" ? "+ Join This Hood" : "+ Join This Market"}</button>}
+          {isPlace && pending && <div style={{ marginTop:12,padding:11,background:T.successSoft,color:T.success,borderRadius:11,fontSize:13,fontWeight:700,textAlign:"center" }}>Request sent. Waiting for the building admin to approve you.</div>}
+          {isPlace && !joined && !pending && <button onClick={openRolePicker} style={{ marginTop:12,width:"100%",padding:11,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:700,fontSize:13,cursor:"pointer" }}>Request to join</button>}
+          {!isPlace && !joined && !pending && <button onClick={openRolePicker} style={{ marginTop:12,width:"100%",padding:11,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:700,fontSize:13,cursor:"pointer" }}>{market.type==="hood" ? "+ Join This Hood" : "+ Join This Market"}</button>}
           {joined && (
             <div style={{ marginTop:12,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8 }}>
               <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
@@ -8650,6 +8725,60 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
             </div>
           )}
         </div>
+
+        {market.type==="hood" && market.level==="ESTATE" && !isPlace && (
+          <div style={{ background:T.card,borderRadius:13,padding:14,border:`1px solid ${T.border}`,marginBottom:16 }}>
+            <div style={{ fontWeight:800,fontSize:14,color:T.text,marginBottom:8 }}>Apartments & hostels here</div>
+            {kids.length===0 && <div style={{ fontSize:12,color:T.textMuted,marginBottom:8 }}>None added yet. Be the first to add yours.</div>}
+            {kids.map(k=>(
+              <div key={k.id} onClick={()=>onOpenPlace && onOpenPlace(k)} style={{ padding:"9px 0",borderTop:`1px solid ${T.border}`,fontSize:13,fontWeight:700,color:T.primary,cursor:"pointer" }}>{k.name} <span style={{ color:T.textMuted,fontWeight:500,fontSize:11 }}>{k.place_type==="HOSTEL" ? "Hostel" : "Apartment"}</span></div>
+            ))}
+            <div onClick={()=>{ setPlaceName(""); setPlaceSimilar([]); setShowAddPlace(true); }} style={{ marginTop:10,textAlign:"center",padding:11,border:`1.5px dashed ${T.border}`,borderRadius:11,cursor:"pointer",fontSize:13,fontWeight:800,color:T.primary }}>+ Add your apartment</div>
+          </div>
+        )}
+
+        {isPlaceAdmin && joinRequests.length>0 && (
+          <div style={{ background:T.card,borderRadius:13,padding:14,border:`1px solid ${T.border}`,marginBottom:16 }}>
+            <div style={{ fontWeight:800,fontSize:14,color:T.text,marginBottom:8 }}>Join requests ({joinRequests.length})</div>
+            {joinRequests.map(r=>(
+              <div key={r.id} style={{ padding:"9px 0",borderTop:`1px solid ${T.border}` }}>
+                <div style={{ fontSize:13,color:T.text,fontWeight:700 }}>{maskPhone(r.phone)} <span style={{ fontWeight:500,color:T.textMuted,fontSize:11 }}>{(r.roles||[]).join(", ")}</span></div>
+                <div style={{ display:"flex",gap:8,marginTop:6 }}>
+                  <div onClick={()=>decideJoin(r,true)} style={{ flex:1,textAlign:"center",padding:8,borderRadius:9,background:T.primary,color:"#fff",fontSize:12,fontWeight:800,cursor:"pointer" }}>Approve</div>
+                  <div onClick={()=>decideJoin(r,false)} style={{ flex:1,textAlign:"center",padding:8,borderRadius:9,border:`1px solid ${T.border}`,color:T.coral,fontSize:12,fontWeight:800,cursor:"pointer" }}>Decline</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {isPlace && !isPlaceAdmin && <div onClick={reportPlace} style={{ textAlign:"center",fontSize:12,color:T.textMuted,margin:"-6px 0 14px",cursor:"pointer" }}>Report this place</div>}
+
+        {showAddPlace && (
+          <div style={{ position:"fixed",inset:0,background:T.overlay,zIndex:100,display:"flex",alignItems:"flex-end" }} onClick={()=>setShowAddPlace(false)}>
+            <div style={{ background:T.card,borderRadius:"20px 20px 0 0",padding:20,width:"100%",maxHeight:"85vh",overflowY:"auto" }} onClick={e=>e.stopPropagation()}>
+              <div style={{ fontWeight:800,fontSize:16,color:T.text,marginBottom:12 }}>Add your apartment in {market.name}</div>
+              <div style={{ display:"flex",gap:8,marginBottom:14 }}>
+                {[["APARTMENT","Apartment / Flats"],["HOSTEL","Hostel"]].map(([v,lbl])=>(
+                  <div key={v} onClick={()=>setPlaceType(v)} style={{ flex:1,textAlign:"center",padding:"9px 4px",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",
+                    border:`1.5px solid ${placeType===v ? T.primary : T.border}`, background: placeType===v ? T.primary : "transparent", color: placeType===v ? "#fff" : T.text }}>{lbl}</div>
+                ))}
+              </div>
+              <Field label="Name of the building" value={placeName} onChange={findSimilar} placeholder="e.g. Duke Apartments" />
+              {placeSimilar.length>0 && (
+                <div style={{ background:T.surface,borderRadius:11,padding:10,marginBottom:12 }}>
+                  <div style={{ fontSize:12,fontWeight:800,color:T.text,marginBottom:6 }}>Is it one of these? Tap yours:</div>
+                  {placeSimilar.map(k=>(
+                    <div key={k.id} onClick={()=>{ setShowAddPlace(false); onOpenPlace && onOpenPlace(k); }} style={{ padding:"7px 0",fontSize:13,fontWeight:700,color:T.primary,cursor:"pointer" }}>{k.name}</div>
+                  ))}
+                  <div style={{ fontSize:11,color:T.textMuted,marginTop:4 }}>Not listed? Continue below.</div>
+                </div>
+              )}
+              <Btn onClick={submitPlace} disabled={savingPlace}>{savingPlace ? "Adding..." : "Add it"}</Btn>
+              <button onClick={()=>setShowAddPlace(false)} style={{ width:"100%",padding:11,marginTop:8,background:"transparent",border:"none",color:T.textMuted,fontSize:13,cursor:"pointer" }}>Cancel</button>
+            </div>
+          </div>
+        )}
 
         <div style={{ display:"flex",gap:6,marginBottom:16,overflowX:"auto" }}>
           {(market.type==="hood"
