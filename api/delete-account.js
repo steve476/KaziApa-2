@@ -93,7 +93,7 @@ export default async function handler(req, res) {
       del("request_replies", "seller_phone"), del("listing_reports", "reporter_phone"), del("listing_unlocks", "tenant_phone"),
       del("market_members", "phone"), del("market_notice_reports", "reporter_phone"), del("market_notices", "phone"),
       del("market_spaces", "phone"), del("nitume_guide_markets", "phone"), del("notifications", "recipient_phone"),
-      del("push_subscriptions", "phone"), del("blocked_users", "blocker_phone"), del("blocked_users", "blocked_phone"), del("otp_codes", "phone"),
+      del("place_reports", "reporter_phone"), del("push_subscriptions", "phone"), del("blocked_users", "blocker_phone"), del("blocked_users", "blocked_phone"), del("otp_codes", "phone"),
     ]);
     // other people's replies to my requests must go before the requests themselves
     await step("delete replies to my requests", async () => {
