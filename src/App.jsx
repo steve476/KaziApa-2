@@ -3465,6 +3465,7 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
   const [showTip, setShowTip]   = useState(false);
   const [tipAmount, setTipAmount] = useState("");
   const [unlocked, setUnlocked] = useState(false);
+  const [contactPhone, setContactPhone] = useState("");
   const [unlocking, setUnlocking] = useState(false);
   const [posting, setPosting]   = useState(false);
   const [photos, setPhotos]     = useState([]);
@@ -3485,7 +3486,7 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
 
   async function loadProperties() {
     setLoading(true);
-    let q = sb.from("properties").select("*").order("created_at", { ascending:false });
+    let q = sb.from("properties").select("id,created_at,title,description,rent,type,town,area,bedrooms,bathrooms,agent_name,agent_rating,agent_viewings,verified,available,strikes,photos").order("created_at", { ascending:false });
     if (town !== "All") q = q.eq("town", town);
     const { data } = await q.limit(30);
     setProperties(data || []);
@@ -3517,21 +3518,29 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
     await sb.from("viewings").insert({
       property_id: prop.id, tenant_name:userName,
       tenant_phone:phone, agent_name:prop.agent_name,
-      agent_phone:prop.agent_phone, amount:150, status:"booked",
+      agent_phone:contactPhone, amount:150, status:"booked",
     });
     // Update agent viewings count
     await sb.from("properties").update({ agent_viewings: (prop.agent_viewings||0)+1 }).eq("id", prop.id);
   }
 
-  // Check whether THIS tenant has already unlocked THIS listing's verified contact
+  // The server gives the agent's number only to the owner, the admin, or a tenant who paid the unlock
+  async function fetchContact(id) {
+    const { data, error } = await sb.rpc("housing_contact", { p_id:id });
+    return (!error && data) ? String(data) : "";
+  }
   useEffect(()=>{
+    setContactPhone("");
     if (!selected) { setUnlocked(false); return; }
-    if (selected.agent_phone === phone) { setUnlocked(true); return; } // your own listing
+    setUnlocked(false);
+    let alive = true;
     (async ()=>{
-      const { data } = await sb.from("listing_unlocks").select("property_id")
-        .eq("property_id", selected.id).eq("tenant_phone", phone).limit(1);
-      setUnlocked((data?.length||0) > 0);
+      const p = await fetchContact(selected.id);
+      if (!alive) return;
+      setContactPhone(p);
+      setUnlocked(!!p);
     })();
+    return ()=>{ alive = false; };
   },[selected]);
 
   async function unlockContact() {
@@ -3547,10 +3556,9 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
       let attempts = 0;
       const poll = setInterval(async ()=>{
         attempts++;
-        const { data:rows } = await sb.from("listing_unlocks").select("property_id")
-          .eq("property_id", selected.id).eq("tenant_phone", phone).limit(1);
-        if ((rows?.length||0) > 0) {
-          clearInterval(poll); setUnlocked(true); setUnlocking(false);
+        const p = await fetchContact(selected.id);
+        if (p) {
+          clearInterval(poll); setContactPhone(p); setUnlocked(true); setUnlocking(false);
           showToast("Contact unlocked!");
         } else if (attempts >= 20) {
           clearInterval(poll); setUnlocking(false);
@@ -3616,13 +3624,13 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
             <div style={{ marginTop:12, paddingTop:12, borderTop:`1px solid ${T.border}` }}>
               {unlocked ? (
                 <>
-                  <div style={{ fontSize:14, fontWeight:700, color:T.primary, marginBottom:2 }}>📞 {selected.agent_phone}</div>
+                  <div style={{ fontSize:14, fontWeight:700, color:T.primary, marginBottom:2 }}>📞 {contactPhone}</div>
                   <div style={{ fontSize:12, color:T.textMuted, marginBottom:10 }}>📍 {selected.area && selected.area+", "}{selected.town}</div>
                   <div style={{ display:"flex", gap:8 }}>
-                    <a href={`tel:${selected.agent_phone}`} style={{ flex:1, textDecoration:"none" }}>
+                    <a href={`tel:${contactPhone}`} style={{ flex:1, textDecoration:"none" }}>
                       <button style={{ width:"100%", padding:11, background:T.card, color:T.primary, border:`1px solid ${T.primary}`, borderRadius:11, fontSize:13, fontWeight:700, cursor:"pointer" }}>📞 Call</button>
                     </a>
-                    <a href={`https://wa.me/${selected.agent_phone.replace(/^0/,"254").replace("+","")}?text=${encodeURIComponent(`Hi ${selected.agent_name}, I found your listing "${selected.title}" on KaziApa. Is it still available?`)}`} target="_blank" style={{ flex:1, textDecoration:"none" }}>
+                    <a href={`https://wa.me/${contactPhone.replace(/^0/,"254").replace("+","")}?text=${encodeURIComponent(`Hi ${selected.agent_name}, I found your listing "${selected.title}" on KaziApa. Is it still available?`)}`} target="_blank" style={{ flex:1, textDecoration:"none" }}>
                       <button style={{ width:"100%", padding:11, background:"#25D366", color:"#fff", border:"none", borderRadius:11, fontSize:13, fontWeight:700, cursor:"pointer" }}>💬 Message Agent</button>
                     </a>
                   </div>
@@ -3668,7 +3676,7 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
                 <div style={{ fontWeight:800, color:T.text, marginBottom:12 }}>Pay Ksh 150 Viewing Fee to Agent</div>
                 <div style={{ background:T.surface, borderRadius:11, padding:14, fontSize:13, color:T.textMid, lineHeight:2 }}>
                   <div>1. M-Pesa → <strong>Send Money</strong></div>
-                  <div>2. Agent's number: <strong style={{ color:T.primary }}>{selected.agent_phone}</strong></div>
+                  <div>2. Agent's number: <strong style={{ color:T.primary }}>{contactPhone}</strong></div>
                   <div>3. Amount: <strong style={{ color:T.primary }}>Ksh 150</strong></div>
                 </div>
                 <div style={{ background:T.accentSoft, borderRadius:10, padding:12, marginTop:12, fontSize:11, color:T.accentDark, lineHeight:1.5 }}>
@@ -3717,7 +3725,7 @@ function HousingScreen({ lang, town, showToast, onBack, userName, phone, onOpenR
               ) : (
                 <div style={{ background:T.card, borderRadius:14, padding:16, marginTop:16, border:`1px solid ${T.accent}` }}>
                   <div style={{ fontSize:13, fontWeight:700, color:T.text, marginBottom:10 }}>Send tip directly to {selected.agent_name} via M-Pesa</div>
-                  <div style={{ fontSize:12, color:T.textMuted, marginBottom:10 }}>Agent number: {selected.agent_phone}</div>
+                  <div style={{ fontSize:12, color:T.textMuted, marginBottom:10 }}>Agent number: {contactPhone}</div>
                   <div style={{ display:"flex", gap:8, marginBottom:10 }}>
                     {[100,200,300,500].map(amt=>(
                       <div key={amt} onClick={()=>setTipAmount(amt.toString())} style={{ flex:1, padding:"8px 0", textAlign:"center", background:tipAmount===amt.toString()?T.accent:T.surface, color:tipAmount===amt.toString()?T.primary:T.textMid, borderRadius:10, fontWeight:700, fontSize:13, cursor:"pointer", border:`1px solid ${tipAmount===amt.toString()?T.accent:T.border}` }}>
@@ -9668,8 +9676,10 @@ function AdminPanel({ sb, onBack, showToast }) {
       totals._grand = grand;
       setRevenueTotals(totals);
     } else if (tab==="housing") {
-      const { data } = await sb.from("properties").select("*").gt("strikes",0).order("strikes",{ ascending:false });
-      setStrikedProps(data||[]);
+      const { data } = await sb.from("properties").select("id,created_at,title,description,rent,type,town,area,bedrooms,bathrooms,agent_name,agent_rating,agent_viewings,verified,available,strikes,photos").gt("strikes",0).order("strikes",{ ascending:false });
+      const { data:ph } = await sb.rpc("housing_admin_phones");
+      const phoneById = {}; (ph||[]).forEach(r=>{ phoneById[r.id]=r.agent_phone; });
+      setStrikedProps((data||[]).map(p=>({ ...p, agent_phone:phoneById[p.id]||"" })));
     } else if (tab==="hoods") {
       const { data: pending } = await sb.from("markets").select("*").eq("type","hood").eq("status","PENDING_REVIEW").order("created_at",{ ascending:false });
       const parentIds = [...new Set((pending||[]).map(h=>h.parent_id).filter(Boolean))];
@@ -9731,7 +9741,8 @@ function AdminPanel({ sb, onBack, showToast }) {
   }
   async function suspendAgent(prop) {
     if(!await askConfirm(`Suspend ${prop.agent_name}? This hides all their property listings.`)) return;
-    await sb.from("properties").update({ available:false }).eq("agent_phone",prop.agent_phone);
+    const { error:susErr } = await sb.rpc("housing_admin_suspend", { p_id:prop.id });
+    if (susErr) { showToast("Couldn't suspend. Try again.","error"); return; }
     showToast(`${prop.agent_name} suspended — listings hidden.`);
     loadTab();
   }
