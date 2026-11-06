@@ -5707,10 +5707,12 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
       disputeReason = await askPrompt("Why are you disputing this payment?");
       if (!disputeReason) return;
     }
+    const tok = getLoginToken();
+    if (!tok) { askNotice("Please log out, log in again with your SMS code, then try again."); return; }
     try {
       const res = await fetch("/api/rent-confirm-payment", {
         method:"POST", headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ ledgerId: entry.id, action, disputeReason, respondedBy: phone }),
+        body: JSON.stringify({ token: tok, ledgerId: entry.id, action, disputeReason }),
       });
       const data = await res.json();
       if (!data.success) { showToast(data.error || "Something went wrong", "error"); return; }
@@ -6799,12 +6801,14 @@ function TenantRentView({ phone, userName, showToast }) {
     if (!amount) { showToast("Enter the amount you paid", "error"); return; }
     if (payMethod === "mpesa" && !mpesaCode.trim()) { showToast("M-Pesa transaction code is required", "error"); return; }
     if (payMethod === "bank" && (!bankName.trim() || !reference.trim())) { showToast("Bank name and reference are required", "error"); return; }
+    const tok = getLoginToken();
+    if (!tok) { askNotice("Please log out, log in again with your SMS code, then try again."); return; }
     setSubmitting(true);
     try {
       const res = await fetch("/api/rent-submit-payment", {
         method:"POST", headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({
-          tenancyId: active.id, landlordPhone: active.landlord_phone, tenantPhone: phone,
+          token: tok, tenancyId: active.id,
           amount: parseFloat(amount), paymentMethod: payMethod,
           mpesaCode: payMethod === "mpesa" ? mpesaCode : undefined,
           bankName: payMethod === "bank" ? bankName : undefined,
