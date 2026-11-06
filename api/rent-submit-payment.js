@@ -3,11 +3,16 @@
 // landlord's own Till/Paybill/Bank/Cash. KaziApa never touches this money —
 // this endpoint only records the claim so the landlord can confirm it.
 //
-// Call with: { tenancyId, landlordPhone, tenantPhone, amount, paymentMethod,
+// Call with: { token, tenancyId, amount, paymentMethod,
 //              mpesaCode?, bankName?, reference?, paymentDate?, screenshotUrl?, note? }
 // paymentMethod: 'mpesa' | 'bank' | 'cash' | 'other'
 
+import { checkLoginToken } from "./_login-token.js";
+
+// Requires the login token (body.token). The tenant is taken from the token, and the landlord from the
+// tenancy record itself, so phone numbers sent by the app are ignored.
 const SUPABASE_URL = "https://dalaawxoiecrmfwxwrdn.supabase.co";
+const d9 = (p) => String(p || "").replace(/\D/g, "").slice(-9);
 
 async function supabaseFetch(path, options = {}) {
   return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -29,14 +34,21 @@ const DB_AUTH = String(DB_KEY || "").startsWith("sb_") ? {} : { Authorization: `
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  const body = req.body || {};
+  const claims = checkLoginToken(body.token);
+  if (!claims) return res.status(401).json({ success: false, error: "Please log in again to continue." });
+
   const {
-    tenancyId, landlordPhone, tenantPhone, amount,
+    tenancyId, amount,
     paymentMethod = "mpesa", mpesaCode, bankName, reference, paymentDate,
     screenshotUrl, note,
-  } = req.body;
+  } = body;
 
-  if (!tenancyId || !landlordPhone || !tenantPhone || !amount) {
-    return res.status(400).json({ error: "tenancyId, landlordPhone, tenantPhone, and amount are required" });
+  if (!tenancyId || !amount) {
+    return res.status(400).json({ error: "tenancyId and amount are required" });
+  }
+  if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) {
+    return res.status(400).json({ error: "Enter a valid amount" });
   }
   if (!["mpesa", "bank", "cash", "other"].includes(paymentMethod)) {
     return res.status(400).json({ error: "Invalid payment method" });
@@ -59,6 +71,17 @@ export default async function handler(req, res) {
   }
 
   try {
+    // The tenancy decides who the tenant and landlord are. Only the tenant named on it may submit.
+    const tenancyRes = await supabaseFetch(`rt_tenancies?id=eq.${encodeURIComponent(tenancyId)}&select=id,landlord_phone,tenant_phone,rent_amount`);
+    const tenancyRows = await tenancyRes.json();
+    const tenancy = Array.isArray(tenancyRows) ? tenancyRows[0] : null;
+    if (!tenancy) return res.status(404).json({ error: "Tenancy not found" });
+    if (d9(tenancy.tenant_phone).length !== 9 || d9(tenancy.tenant_phone) !== d9(claims.phone)) {
+      return res.status(403).json({ error: "This is not your tenancy" });
+    }
+    const landlordPhone = tenancy.landlord_phone;
+    const tenantPhone = tenancy.tenant_phone;
+
     if (cleanCode) {
       // The unique index on rt_ledger.mpesa_code is the real guard against
       // reuse — but check first here too, so we can return a clear message
@@ -74,9 +97,7 @@ export default async function handler(req, res) {
     // the landlord's attention rather than silently accepted or rejected.
     let flagged = false;
     let flagReason = null;
-    const tenancyRes = await supabaseFetch(`rt_tenancies?id=eq.${tenancyId}&select=rent_amount`);
-    const tenancyRows = await tenancyRes.json();
-    const expectedRent = tenancyRows?.[0]?.rent_amount;
+    const expectedRent = tenancy.rent_amount;
     if (expectedRent != null && Number(amount) !== Number(expectedRent)) {
       flagged = true;
       flagReason = `Amount Ksh ${amount} differs from expected rent Ksh ${expectedRent}`;
@@ -135,10 +156,10 @@ export default async function handler(req, res) {
     // same WhatsApp template used for chat messages, just repurposed text.
     try {
       const flagNote = flagged ? " ⚠️ needs review" : "";
-      await fetch(`${process.env.APP_URL || "https://kaziapa.co.ke"}/api/notify-whatsapp`, {
+      await fetch(`${process.env.APP_URL || "https://kaziapa.co.ke"}/api/notify-message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-internal-key": process.env.INTERNAL_API_KEY || "" },
-        body: JSON.stringify({ phone: landlordPhone, senderName: `Rent payment submitted (Ksh ${amount})${flagNote} — open KaziApa to confirm` }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: landlordPhone, body: `Rent payment submitted (Ksh ${amount})${flagNote}. Open KaziApa to confirm` }),
       });
     } catch (notifyErr) {
       console.error("Notify landlord failed (non-fatal):", notifyErr.message);
