@@ -10,6 +10,15 @@
 // link would just hand out exactly what that rule exists to prevent.
 
 import webpush from "web-push";
+import { checkLoginToken } from "./_login-token.js";
+
+// Who may call this:
+//  - the app, with the login token in body.token (limited: registered recipients only, rate limits,
+//    and the SMS fallback never carries free text typed by a user)
+//  - our own server files, with the x-internal-key header (INTERNAL_API_KEY), for system messages
+const HOUR = 60 * 60 * 1000;
+const MAX_PER_SENDER_HOUR = 60;
+const MAX_PER_RECIPIENT_HOUR = 20;
 
 const SUPABASE_URL = "https://dalaawxoiecrmfwxwrdn.supabase.co";
 const ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhbGFhd3hvaWVjcm1md3h3cmRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1MTg1NjksImV4cCI6MjA5NzA5NDU2OX0.vl3NdmbF4suNoSeDXLwksYIhx8V-TddrKT0ZShHZwws";
@@ -79,27 +88,73 @@ function normalizePhone(raw) {
   return "+254" + d;
 }
 
+const d9 = (p) => String(p || "").replace(/\D/g, "").slice(-9);
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const internalKey = process.env.INTERNAL_API_KEY;
+  const isInternal = !!internalKey && req.headers["x-internal-key"] === internalKey;
+  const claims = isInternal ? null : checkLoginToken((req.body || {}).token);
+  if (!isInternal && !claims) return res.status(401).json({ success: false, error: "Not allowed" });
 
   // Either pass { senderName, message? } for a normal chat-style notification
   // ("Name on KaziApa: '...'"), or pass a pre-composed { body } directly for
   // system-style notifications (rent updates, maintenance reports) that
   // don't have a person "sender" in the usual sense.
-  const { phone, senderName, message, body: rawBody, debug } = req.body;
-  if (!phone || (!senderName && !rawBody)) {
+  const { phone, senderName: clientName, message: clientMessage, body: clientBody } = req.body;
+  const debug = isInternal ? req.body.debug : undefined;
+  if (!phone || (!clientName && !clientBody)) {
     return res.status(400).json({ error: "phone and either senderName or body are required" });
   }
 
   const fp = normalizePhone(phone);
-
-  const body = rawBody
-    ? rawBody
-    : message
-    ? `${senderName} on KaziApa: "${message}"`
-    : `${senderName} sent you a new message on KaziApa.`;
+  const clip = (t, n) => String(t || "").replace(/\s+/g, " ").trim().slice(0, n);
+  let senderName = clip(clientName, 40);
+  const message = clientMessage ? clip(clientMessage, 200) : "";
+  const rawBody = clientBody ? clip(clientBody, 240) : "";
 
   try {
+    // App callers: the sender's name comes from their own profile, the recipient must be a KaziApa user,
+    // and each sender / recipient has an hourly limit. If the log table is missing the limits are skipped.
+    if (!isInternal) {
+      const me = claims.phone;
+      if (d9(fp) === d9(me)) return res.status(200).json({ success: false, skipped: "self" });
+      const meVariants = [me, "0" + String(me).slice(-9), String(me).replace("+", "")];
+      const nameRes = await supabaseFetch(`users?phone=in.(${meVariants.map(encodeURIComponent).join(",")})&select=name&limit=1`);
+      const nameRows = nameRes.ok ? await nameRes.json() : [];
+      senderName = clip(nameRows?.[0]?.name, 40) || "Someone";
+
+      const rv = [fp, "0" + fp.slice(4), fp.slice(1)];
+      const userRes = await supabaseFetch(`users?phone=in.(${rv.map(encodeURIComponent).join(",")})&select=phone&limit=1`);
+      const userRows = userRes.ok ? await userRes.json() : [];
+      if (!userRows.length) return res.status(200).json({ success: false, skipped: "not a KaziApa user" });
+
+      const since = new Date(Date.now() - HOUR).toISOString();
+      const logOk = async () => {
+        const a = await supabaseFetch(`notify_log?sender_phone=eq.${encodeURIComponent(me)}&created_at=gte.${encodeURIComponent(since)}&select=id&limit=${MAX_PER_SENDER_HOUR + 1}`);
+        const b = await supabaseFetch(`notify_log?recipient_phone=eq.${encodeURIComponent(fp)}&created_at=gte.${encodeURIComponent(since)}&select=id&limit=${MAX_PER_RECIPIENT_HOUR + 1}`);
+        if (!a.ok || !b.ok) { console.error("notify-message: notify_log not available, limits skipped"); return true; }
+        const [ra, rb] = [await a.json(), await b.json()];
+        if (ra.length >= MAX_PER_SENDER_HOUR || rb.length >= MAX_PER_RECIPIENT_HOUR) return false;
+        await supabaseFetch("notify_log", { method: "POST", body: JSON.stringify({ sender_phone: me, recipient_phone: fp }) }).catch(() => {});
+        if (Math.random() < 0.02) supabaseFetch(`notify_log?created_at=lt.${encodeURIComponent(new Date(Date.now() - 48 * HOUR).toISOString())}`, { method: "DELETE" }).catch(() => {});
+        return true;
+      };
+      if (!(await logOk())) return res.status(429).json({ success: false, error: "Too many notifications" });
+    }
+
+    const body = rawBody
+      ? rawBody
+      : message
+      ? `${senderName} on KaziApa: "${message}"`
+      : `${senderName} sent you a new message on KaziApa.`;
+    // SMS text: system messages from our own server go out in full; for app callers it is always a fixed text,
+    // so nobody can use KaziApa to send their own wording by SMS.
+    const smsBody = isInternal ? body
+      : rawBody ? "You have a new update on KaziApa. Open the app to see it."
+      : `${senderName} sent you a message on KaziApa. Open the app to read it.`;
+
     // Also match rows saved earlier in other formats (e.g. 07xxxxxxxx or 2547xxxxxxxx)
     const variants = [fp, "0" + fp.slice(4), fp.slice(1)];
     const subsRes = await supabaseFetch(`push_subscriptions?phone=in.(${variants.map((v) => encodeURIComponent(v)).join(",")})`);
@@ -157,7 +212,7 @@ export default async function handler(req, res) {
     }
 
     // No subscription, or every push attempt failed — fall back to SMS.
-    const sms = await sendSms(fp, body);
+    const sms = await sendSms(fp, smsBody);
     return res.status(200).json({
       success: sms.ok,
       channel: "sms",
