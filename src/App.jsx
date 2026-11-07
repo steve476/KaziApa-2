@@ -1880,19 +1880,27 @@ export default function KaziApa() {
     }
     // Parse price — handle ranges like "12000-20000" by taking the first number
     const parsedPrice = parseInt(postPrice.toString().replace(/[^0-9]/,"")) || 0;
-    const { error } = await sb.from("listings").insert({
+    const { data:newListing, error } = await sb.from("listings").insert({
       title:postTitle, price:parsedPrice, price_label:postPrice,
       description:postDesc, category:postCat, town:postTown,
-      seller_name:userName, seller_phone:phone, photos:postPhotos, boosted:postBoost,
+      seller_name:userName, seller_phone:phone, photos:postPhotos,
       lat:postLat, lng:postLng, seller_avatar_url:userAvatar||null, market_id:postMarketId, market_name:postMarketName||null,
-    });
+    }).select().single();
     if(error) { showToast("Error posting. Try again.","error"); }
     else {
       showToast("Listing posted and live immediately! 🎉");
       setPostTitle(""); setPostPrice(""); setPostDesc(""); setPostTown(""); setPostPhotos([]); setPostBoost(false); setPostLat(null); setPostLng(null);
       setPostMarketId(null); setPostMarketName("");
       await loadListings();
-      nav("home","home");
+      if (postBoost && newListing) {
+        // Real boost: open the paid boost options (24h to 30 days, or a free boost) for the new listing
+        const { data:bu } = await sb.from("users").select("free_boosts_remaining").eq("phone",phone).single();
+        setFreeBoosts(bu?.free_boosts_remaining||0);
+        setActiveListing(newListing); setShowBoostOptions(true); nav("listing","browse");
+        showToast("Listing is live! Choose how long to boost it.");
+      } else {
+        nav("home","home");
+      }
     }
     setPosting(false);
   }
@@ -2910,13 +2918,13 @@ export default function KaziApa() {
             <MarketPicker marketId={postMarketId} marketName={postMarketName} onPick={(id,name)=>{ setPostMarketId(id); setPostMarketName(name); }} />
             <div style={{ background:T.accentSoft,borderRadius:14,padding:16,marginBottom:18,border:`1px solid ${T.accent}` }}>
               <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-                <div><div style={{ fontWeight:700,color:T.text,fontSize:14 }}><Icon n="zap" s={15} /> Boost this Listing</div><div style={{ fontSize:12,color:T.textMuted,marginTop:2 }}>Appear at the top for 7 days — Ksh 100</div></div>
+                <div><div style={{ fontWeight:700,color:T.text,fontSize:14 }}><Icon n="zap" s={15} /> Boost this Listing</div><div style={{ fontSize:12,color:T.textMuted,marginTop:2 }}>Appear at the top — pick 24 hours to 30 days after publishing (from Ksh 30)</div></div>
                 <div onClick={()=>setPostBoost(!postBoost)} style={{ width:48,height:26,borderRadius:13,background:postBoost?T.accent:T.border,position:"relative",cursor:"pointer",flexShrink:0 }}>
                   <div style={{ width:20,height:20,borderRadius:"50%",background:"#fff",position:"absolute",top:3,left:postBoost?25:3,transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)" }} />
                 </div>
               </div>
             </div>
-            <Btn onClick={postListing} disabled={posting}>{posting?"Posting...":postBoost?"Publish + Boost — Ksh 100":tr(lang,"Publish — Free")}</Btn>
+            <Btn onClick={postListing} disabled={posting}>{posting?"Posting...":postBoost?"Publish, then choose boost":tr(lang,"Publish — Free")}</Btn>
             <div style={{ textAlign:"center",fontSize:11,color:T.textMuted,marginTop:8 }}>{tr(lang,"Listings go live immediately on KaziApa.")}</div>
           </div>
         </div>
