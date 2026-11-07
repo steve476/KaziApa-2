@@ -158,7 +158,7 @@ export default async function handler(req, res) {
       const flagNote = flagged ? " ⚠️ needs review" : "";
       await fetch(`${process.env.APP_URL || "https://kaziapa.co.ke"}/api/notify-message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-internal-key": process.env.INTERNAL_API_KEY || "" },
         body: JSON.stringify({ phone: landlordPhone, body: `Rent payment submitted (Ksh ${amount})${flagNote}. Open KaziApa to confirm` }),
       });
     } catch (notifyErr) {
