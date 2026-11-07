@@ -5052,7 +5052,7 @@ function RentTrackerScreen({ town, showToast, onBack, userName, phone }) {
   return (
     <div>
       <Header title={role === "landlord" ? "Landlord Dashboard" : "My Rentals"} />
-      {(hasLandlordData && hasTenantData) && (
+      {(
         <div style={{ padding:"0 16px", marginBottom:12 }}>
           <div style={{ display:"flex", gap:6 }}>
             {[["landlord","🏠 Landlord"],["tenant","🔑 Tenant"]].map(([r,l])=>(
