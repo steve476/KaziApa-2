@@ -905,7 +905,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
     fetch("/api/notify-message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: recipientPhone, senderName: currentName, message: input }),
+      body: JSON.stringify({ token:getLoginToken(), phone: recipientPhone, senderName: currentName, message: input }),
     }).catch(()=>{});
 
     setInput("");
@@ -924,7 +924,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
       const url = await compressAndUploadChatImage(file);
       await sb.from("chats").insert({ listing_id:String(listing?.id||""), listing_title:listing?.title, buyer_phone:buyerPhone, buyer_name:buyerName, seller_phone:sellerPhone, seller_name:sellerName, sender_phone:currentPhone, sender_name:currentName, message:"📷 Photo", image_url:url, read:false });
       const recipientPhone = isBuyer ? sellerPhone : buyerPhone;
-      fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ phone:recipientPhone, senderName:currentName, message:"📷 Photo" }) }).catch(()=>{});
+      fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:getLoginToken(), phone:recipientPhone, senderName:currentName, message:"📷 Photo" }) }).catch(()=>{});
       loadMsgs();
     } catch(err) {
       askNotice("Couldn't send that photo — try again.");
@@ -2863,7 +2863,7 @@ export default function KaziApa() {
                     const short = `${userName} says they sent Ksh ${amt} for "${activeListing.title}".`;
                     await sb.from("chats").insert({ listing_id:String(activeListing.id||""), listing_title:activeListing.title, buyer_phone:phone, buyer_name:userName, seller_phone:activeListing.seller_phone, seller_name:activeListing.seller_name, sender_phone:phone, sender_name:userName, message:`💰 New order: ${short}${code?` M-Pesa code: ${code.toUpperCase()}.`:""} Please check your M-Pesa, then confirm in Profile → My Orders → Sales.`, read:false });
                     await sb.from("notifications").insert({ recipient_phone:activeListing.seller_phone, icon:"💰", read:false, title:"New order — please confirm payment", body:`${short} Check your M-Pesa, then confirm in My Orders → Sales.` });
-                    fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ phone:activeListing.seller_phone, senderName:userName, message:`💰 New order for "${activeListing.title}" — please check M-Pesa and confirm.` }) }).catch(()=>{});
+                    fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:getLoginToken(), phone:activeListing.seller_phone, senderName:userName, message:`💰 New order for "${activeListing.title}" — please check M-Pesa and confirm.` }) }).catch(()=>{});
                   } catch(e) {}
                   setCheckStep(3); showToast("Order recorded — seller notified");
                   } finally { checkoutBusyRef.current = false; }
@@ -5816,7 +5816,7 @@ function LandlordRentView({ phone, landlordPhone, teamRole, userName, showToast,
       const msg = uaAction === "payment"
         ? `Your landlord recorded a payment of Ksh ${uaAmount} on your KaziApa rent account`
         : `Your landlord updated your KaziApa rent account (${UA_LABELS[uaAction]}: Ksh ${uaAmount})`;
-      await fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ phone: uaTargetTenancy.tenant_phone, body: msg }) });
+      await fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ token:getLoginToken(), phone: uaTargetTenancy.tenant_phone, body: msg }) });
     } catch(e) {}
     loadAll();
     if (tenancy && tenancy.id === uaTargetTenancy.id) openUnit(activeUnit);
@@ -6852,7 +6852,7 @@ function TenantRentView({ phone, userName, showToast }) {
     showToast("Issue reported — your landlord has been notified");
     try {
       await fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ phone: active.landlord_phone, body: `New maintenance report (${mCategory}) — open KaziApa` }) });
+        body: JSON.stringify({ token:getLoginToken(), phone: active.landlord_phone, body: `New maintenance report (${mCategory}) — open KaziApa` }) });
     } catch(e) {}
     setMDesc(""); setMPhoto(""); setMCategory("plumbing");
     setSubmitting(false);
@@ -9520,7 +9520,7 @@ async function markOrderPaid(sb, o, sellerPhone) {
     const title = l?.title || "your order";
     await sb.from("chats").insert({ listing_id:String(o.listing_id||""), listing_title:title, buyer_phone:o.buyer_phone, buyer_name:o.buyer_name, seller_phone:sellerPhone, seller_name:l?.seller_name||"Seller", sender_phone:sellerPhone, sender_name:l?.seller_name||"Seller", message:`✅ I received your payment of Ksh ${(o.amount||0).toLocaleString()} for "${title}". Thank you!`, read:false });
     await sb.from("notifications").insert({ recipient_phone:o.buyer_phone, icon:"✅", read:false, title:"Seller confirmed your payment", body:`Your payment for "${title}" was confirmed. After you get your item, rate the seller in My Orders.` });
-    fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ phone:o.buyer_phone, senderName:l?.seller_name||"Seller", message:`✅ Seller confirmed your payment for "${title}".` }) }).catch(()=>{});
+    fetch("/api/notify-message", { method:"POST", headers:{ "Content-Type":"application/json" }, body:JSON.stringify({ token:getLoginToken(), phone:o.buyer_phone, senderName:l?.seller_name||"Seller", message:`✅ Seller confirmed your payment for "${title}".` }) }).catch(()=>{});
   } catch(e) {}
   return { error:null };
 }
