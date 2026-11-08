@@ -1079,7 +1079,9 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
                     </div>
                   ) : msg.message}
                   {timeLabel && (
-                    <div style={{ fontSize:10,opacity:0.7,marginTop:4,textAlign:"right",color:msg.sender_phone===currentPhone?"rgba(255,255,255,0.85)":T.textMuted }}>{timeLabel}</div>
+                    <div style={{ fontSize:10,opacity:0.7,marginTop:4,textAlign:"right",color:msg.sender_phone===currentPhone?"rgba(255,255,255,0.85)":T.textMuted }}>{timeLabel}{msg.sender_phone===currentPhone && (
+                      <span style={{ marginLeft:5,fontWeight:800,opacity:1,color:msg.read===true?"#7DF9A8":"rgba(255,255,255,0.85)" }}>{msg.read===true?"✓✓":"✓"}</span>
+                    )}</div>
                   )}
                 </div>
             }
@@ -1187,7 +1189,7 @@ function ChatsList({ phone, onOpenChat, onBack }) {
     let data = null;
     try {
       const res = await Promise.race([
-        sb.from("chats").select("listing_id,listing_title,buyer_phone,buyer_name,seller_phone,seller_name,message,created_at").or(`buyer_phone.eq.${phone},seller_phone.eq.${phone}`).order("created_at",{ ascending:false }).limit(300),
+        sb.from("chats").select("listing_id,listing_title,buyer_phone,buyer_name,seller_phone,seller_name,message,created_at,sender_phone,read").or(`buyer_phone.eq.${phone},seller_phone.eq.${phone}`).order("created_at",{ ascending:false }).limit(300),
         new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),15000))
       ]);
       if(res.error) throw res.error;
@@ -1196,10 +1198,14 @@ function ChatsList({ phone, onOpenChat, onBack }) {
       if(!threads.length) setLoadErr(true);
       setLoading(false); return;
     }
-    const seen = new Set(); const list = [];
+    const seen = new Set(); const list = []; const unreadBy = {};
     (data||[]).forEach(m=>{
       const key = m.listing_id+"_"+m.buyer_phone;
-      if(!seen.has(key)) { seen.add(key); list.push(m); }
+      if(m.read===false && m.sender_phone!==phone && m.sender_phone!=="system") unreadBy[key] = (unreadBy[key]||0)+1;
+    });
+    (data||[]).forEach(m=>{
+      const key = m.listing_id+"_"+m.buyer_phone;
+      if(!seen.has(key)) { seen.add(key); list.push({ ...m, unread: unreadBy[key]||0 }); }
     });
     setThreads(list);
     setLoading(false);
@@ -1224,16 +1230,20 @@ function ChatsList({ phone, onOpenChat, onBack }) {
             const otherName = isBuyer ? t.seller_name : t.buyer_name;
             const otherPhone = isBuyer ? t.seller_phone : t.buyer_phone;
             const otherAvatar = avatarMap[otherPhone];
+            const isUnread = (t.unread||0) > 0;
             return (
-              <div key={i} onClick={()=>onOpenChat(t)} style={{ background:T.card,borderRadius:14,padding:14,marginBottom:10,border:`1px solid ${T.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12 }}>
+              <div key={i} onClick={()=>onOpenChat(t)} style={{ background:isUnread?T.primarySoft:T.card,borderRadius:14,padding:14,marginBottom:10,border:isUnread?`1.5px solid ${T.primary}`:`1px solid ${T.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:12 }}>
                 <div style={{ width:42,height:42,borderRadius:"50%",background:T.primary,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,overflow:"hidden",flexShrink:0 }}>
                   {otherAvatar ? <img src={otherAvatar} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} /> : otherName?.[0]}
                 </div>
                 <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:700,color:T.text,fontSize:14 }}>{otherName}</div>
+                  <div style={{ fontWeight:isUnread?900:700,color:T.text,fontSize:14 }}>{otherName}</div>
                   <div style={{ fontSize:12,fontWeight:700,color:T.primary,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>📦 {t.listing_title}</div>
-                  <div style={{ fontSize:12,color:T.textMid,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{t.message}</div>
+                  <div style={{ fontSize:12,fontWeight:isUnread?800:400,color:isUnread?T.text:T.textMid,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{t.sender_phone===phone ? "You: " : ""}{t.message}</div>
                 </div>
+                {isUnread && (
+                  <div style={{ minWidth:22,height:22,borderRadius:11,background:T.primary,color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 6px",flexShrink:0 }}>{t.unread>9?"9+":t.unread}</div>
+                )}
               </div>
             );
           })
