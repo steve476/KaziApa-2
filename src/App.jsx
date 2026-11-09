@@ -2762,7 +2762,7 @@ export default function KaziApa() {
 
       {/* KIOSK */}
       {screen==="kiosk" && (
-        <KioskScreen phone={phone} userName={userName} town={userTown} showToast={showToast} onBack={()=>nav("profile","profile")} onAddItem={()=>nav("post","post")} />
+        <KioskScreen phone={phone} userName={userName} town={userTown} showToast={showToast} onBack={()=>nav("profile","profile")} onAddItem={()=>nav("post","post")} onOpenOrders={()=>nav("orders","profile")} />
       )}
 
       {screen==="myListings" && (
@@ -4871,11 +4871,128 @@ function FundiScreen({ userName, phone, town, showToast, onBack, lang }) {
 
 // ─── KIOSK SCREEN ─────────────────────────────────────────────────────────────
 // ─── PUBLIC KIOSK (no login required — this is what the shareable link opens) ──
+// ─── KIOSK TRACK RECORD (shared by My Kiosk and the public kiosk page) ───────
+const KIOSK_TYPES = { shop:"🏪 Shop", transport:"🚗 Transport", worker:"🛠️ Worker", service:"💼 Service" };
+
+function KioskTrackRecord({ rec, kiosk, C }) {
+  const tiles = [];
+  if (rec) {
+    tiles.push({ big:String(rec.completed_orders||0), label:"Orders completed" });
+    tiles.push({ big:String(rec.items_sold||0), label:"Items sold" });
+    tiles.push({ big: rec.rating_count>0 ? "★ "+rec.rating_avg : "—", label: rec.rating_count>0 ? rec.rating_count+" rating"+(rec.rating_count===1?"":"s") : "No ratings yet" });
+    if ((rec.nitume_completed||0)>0) tiles.push({ big:String(rec.nitume_completed), label:"Nitume jobs"+(rec.nitume_rating?" · ★ "+Number(rec.nitume_rating).toFixed(1):"") });
+    if (rec.member_since) { let m=""; try { m = new Date(rec.member_since).toLocaleDateString([],{ month:"short", year:"numeric" }); } catch(e) {} if (m) tiles.push({ big:m, label:"On KaziApa since" }); }
+  }
+  const rows = [];
+  if (kiosk?.kiosk_type && KIOSK_TYPES[kiosk.kiosk_type]) rows.push({ icon:"🏷️", label:"I am a", text:KIOSK_TYPES[kiosk.kiosk_type].replace(/^\S+\s/,"") });
+  if (kiosk?.years_experience!=null && kiosk.years_experience!=="") rows.push({ icon:"⏳", label:"Experience", text:kiosk.years_experience+" year"+(Number(kiosk.years_experience)===1?"":"s") });
+  if (kiosk?.areas_covered) rows.push({ icon:"📍", label:"Areas I cover", text:kiosk.areas_covered });
+  if (kiosk?.charges) rows.push({ icon:"💰", label:"My charges", text:kiosk.charges });
+  if (!tiles.length && !rows.length) return null;
+  return (
+    <div>
+      {tiles.length>0 && (
+        <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:rows.length?12:0 }}>
+          {tiles.map((t,i)=>(
+            <div key={i} style={{ background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:"12px 10px",textAlign:"center" }}>
+              <div style={{ fontSize:20,fontWeight:900,color:C.primary }}>{t.big}</div>
+              <div style={{ fontSize:11,color:C.muted,marginTop:2 }}>{t.label}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {rows.length>0 && (
+        <div style={{ background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:"4px 14px" }}>
+          {rows.map((r,i)=>(
+            <div key={i} style={{ display:"flex",gap:10,padding:"10px 0",borderBottom:i<rows.length-1?"1px solid "+C.border:"none" }}>
+              <div style={{ fontSize:16 }}>{r.icon}</div>
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ fontSize:11,color:C.muted,fontWeight:700 }}>{r.label}</div>
+                <div style={{ fontSize:13,color:C.text,marginTop:1,lineHeight:1.5 }}>{r.text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KioskTestimonialList({ items, C, onToggleHide }) {
+  if (!items || items.length===0) return <div style={{ fontSize:13,color:C.muted,padding:"6px 0 2px" }}>No testimonials yet.</div>;
+  return (
+    <div>
+      {items.map(t=>(
+        <div key={t.id} style={{ background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:12,marginBottom:8,opacity:t.hidden?0.55:1 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ width:32,height:32,borderRadius:"50%",background:C.primary,color:"#fff",fontWeight:800,fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>{(t.author_name||"?")[0]}</div>
+            <div style={{ flex:1,minWidth:0 }}>
+              <div style={{ fontSize:13,fontWeight:700,color:C.text }}>{t.author_name}</div>
+              {t.rating ? <div style={{ fontSize:12,color:"#F5A623",letterSpacing:1 }}>{"★".repeat(t.rating)}<span style={{ color:C.border }}>{"★".repeat(5-t.rating)}</span></div> : null}
+            </div>
+            {onToggleHide && (
+              <button onClick={()=>onToggleHide(t)} style={{ background:"none",border:"1px solid "+C.border,borderRadius:14,padding:"4px 10px",fontSize:11,fontWeight:700,color:C.muted,cursor:"pointer" }}>{t.hidden?"Show":"Hide"}</button>
+            )}
+          </div>
+          <div style={{ fontSize:13,color:C.text,marginTop:8,lineHeight:1.55 }}>{t.message}</div>
+          {t.hidden && <div style={{ fontSize:11,color:C.muted,marginTop:6 }}>Hidden — only you can see this</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function KioskTestimonialForm({ kioskPhone, C, onDone, onLogin }) {
+  const [open,setOpen]   = useState(false);
+  const [msg,setMsg]     = useState("");
+  const [rating,setRating] = useState(5);
+  const [busy,setBusy]   = useState(false);
+  const [note,setNote]   = useState("");
+  const loggedIn = !!getLoginToken();
+  async function submit() {
+    if (msg.trim().length<10) { setNote("Write at least 10 characters."); return; }
+    setBusy(true); setNote("");
+    const { data, error } = await sb.rpc("kiosk_testimonial_add", { p_phone:kioskPhone, p_message:msg.trim(), p_rating:rating });
+    setBusy(false);
+    const texts = { no_relation:"You can leave a testimonial after you chat or trade with this seller on KaziApa.", self:"You can't review your own kiosk.", not_logged_in:"Please log in to leave a testimonial.", too_short:"Write at least 10 characters.", too_long:"Keep it under 300 characters.", no_kiosk:"This kiosk was not found." };
+    if (error || data!=="ok") { setNote(texts[data] || "Couldn't save. Try again."); return; }
+    setOpen(false); setMsg(""); onDone && onDone();
+  }
+  if (!loggedIn) return (
+    <button onClick={onLogin} style={{ width:"100%",padding:11,background:"none",border:"1.5px dashed "+C.primary,borderRadius:12,color:C.primary,fontWeight:700,fontSize:13,cursor:"pointer" }}>Log in to KaziApa to leave a testimonial</button>
+  );
+  if (!open) return (
+    <button onClick={()=>setOpen(true)} style={{ width:"100%",padding:11,background:"none",border:"1.5px dashed "+C.primary,borderRadius:12,color:C.primary,fontWeight:700,fontSize:13,cursor:"pointer" }}>✍️ Write a testimonial</button>
+  );
+  return (
+    <div style={{ background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:12 }}>
+      <div style={{ display:"flex",gap:4,marginBottom:8 }}>
+        {[1,2,3,4,5].map(n=>(
+          <span key={n} onClick={()=>setRating(n)} style={{ fontSize:26,cursor:"pointer",color:n<=rating?"#F5A623":C.border }}>★</span>
+        ))}
+      </div>
+      <textarea value={msg} onChange={e=>setMsg(e.target.value.slice(0,300))} rows={3} placeholder="How was your experience? (what you bought or the work done)" style={{ width:"100%",boxSizing:"border-box",padding:10,borderRadius:10,border:"1px solid "+C.border,fontSize:13,resize:"none",outline:"none",background:"#fff",color:C.text }} />
+      {note && <div style={{ fontSize:12,color:"#C53030",marginTop:6 }}>{note}</div>}
+      <div style={{ display:"flex",gap:8,marginTop:8 }}>
+        <button onClick={()=>{ setOpen(false); setNote(""); }} style={{ flex:1,padding:10,background:"none",border:"1px solid "+C.border,borderRadius:10,fontWeight:700,fontSize:13,color:C.muted,cursor:"pointer" }}>Cancel</button>
+        <button onClick={submit} disabled={busy} style={{ flex:2,padding:10,background:C.primary,border:"none",borderRadius:10,fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>{busy?"Saving...":"Post testimonial"}</button>
+      </div>
+    </div>
+  );
+}
+
 function PublicKiosk({ phone, onClose }) {
   const [kiosk, setKiosk] = useState(null);
   const [listings, setListings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [rec, setRec] = useState(null);
+  const [testimonials, setTestimonials] = useState([]);
+
+  async function loadTestimonials(kp) {
+    const { data } = await sb.rpc("kiosk_testimonials_get", { p_phone:kp });
+    setTestimonials(Array.isArray(data) ? data : []);
+  }
 
   useEffect(()=>{
     (async ()=>{
@@ -4884,10 +5001,17 @@ function PublicKiosk({ phone, onClose }) {
       if (!k) { setNotFound(true); setLoading(false); return; }
       const { data:l } = await sb.from("listings").select("*").eq("seller_phone",k.phone).order("created_at",{ ascending:false }).limit(30);
       setKiosk(k); setListings(l||[]); setLoading(false);
+      // track record + testimonials (totals only), and count this visit once per browser per day
+      sb.rpc("kiosk_track_record", { p_phone:k.phone }).then(({ data })=>{ if (data && typeof data==="object") setRec(data); });
+      loadTestimonials(k.phone);
+      try {
+        const key = "kz_kview_"+k.phone+"_"+new Date().toISOString().slice(0,10);
+        if (!localStorage.getItem(key)) { localStorage.setItem(key,"1"); sb.rpc("kiosk_record_view", { p_phone:k.phone }); }
+      } catch(e) {}
     })();
   },[phone]);
 
-  const T2 = { primary:"#0d6efd", accent:"#f5a623", border:"#e2e8f0", text:"#1a1a1a", muted:"#718096", bg:"#f7f9fc" };
+  const T2 = { primary:"#0d6efd", accent:"#f5a623", border:"#e2e8f0", text:"#1a1a1a", muted:"#718096", bg:"#f7f9fc", card:"#fff" };
 
   if (loading) return <div style={{ minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:T2.muted }}>Loading kiosk...</div>;
   if (notFound) return (
@@ -4911,6 +5035,13 @@ function PublicKiosk({ phone, onClose }) {
         <div style={{ fontSize:13,color:T2.muted,marginTop:2 }}>📍 {kiosk.location}</div>
         {kiosk.category && <div style={{ background:T2.primary,color:"#fff",borderRadius:20,padding:"4px 12px",fontSize:11,fontWeight:700,display:"inline-block",marginTop:8 }}>{kiosk.category}</div>}
         {kiosk.description && <div style={{ fontSize:13,color:T2.text,marginTop:12,lineHeight:1.6,background:"#fff",padding:12,borderRadius:12,border:`1px solid ${T2.border}` }}>{kiosk.description}</div>}
+
+        <div style={{ fontWeight:800,color:T2.text,fontSize:15,marginTop:20,marginBottom:10 }}>Track record</div>
+        <KioskTrackRecord rec={rec} kiosk={kiosk} C={T2} />
+
+        <div style={{ fontWeight:800,color:T2.text,fontSize:15,marginTop:20,marginBottom:10 }}>Testimonials ({testimonials.length})</div>
+        <KioskTestimonialList items={testimonials} C={T2} />
+        <div style={{ marginTop:8 }}><KioskTestimonialForm kioskPhone={kiosk.phone} C={T2} onDone={()=>loadTestimonials(kiosk.phone)} onLogin={onClose} /></div>
 
         <div style={{ fontWeight:800,color:T2.text,fontSize:15,marginTop:20,marginBottom:12 }}>Items ({listings.length})</div>
         {listings.length===0 ? (
@@ -7777,7 +7908,7 @@ function NitumeScreen({ town, showToast, onBack, userName, phone }) {
   );
 }
 
-function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
+function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOpenOrders }) {
   const [kiosk, setKiosk]       = useState(null);
   const [listings, setListings] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -7790,8 +7921,30 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
   const [logoPhotos, setLogoPhotos] = useState([]);
   const [bannerPhotos, setBannerPhotos] = useState([]);
   const [saving, setSaving]     = useState(false);
+  const [kType, setKType]       = useState("");
+  const [years, setYears]       = useState("");
+  const [areas, setAreas]       = useState("");
+  const [charges, setCharges]   = useState("");
+  const [rec, setRec]           = useState(null);
+  const [dash, setDash]         = useState(null);
+  const [testimonials, setTestimonials] = useState([]);
 
   useEffect(()=>{ load(); },[]);
+
+  async function loadTrack() {
+    const [r, d, t] = await Promise.all([
+      sb.rpc("kiosk_track_record", { p_phone:phone }),
+      sb.rpc("kiosk_dashboard"),
+      sb.rpc("kiosk_testimonials_get", { p_phone:phone }),
+    ]);
+    setRec(r.data && typeof r.data==="object" ? r.data : null);
+    setDash(d.data && typeof d.data==="object" ? d.data : null);
+    setTestimonials(Array.isArray(t.data) ? t.data : []);
+  }
+  async function toggleHideTestimonial(t) {
+    await sb.rpc("kiosk_testimonial_hide", { p_id:t.id, p_hidden:!t.hidden });
+    loadTrack();
+  }
 
   async function load() {
     setLoading(true);
@@ -7801,10 +7954,12 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
       setKiosk(k); setName(k.name); setDesc(k.description); setLocation(k.location); setCategory(k.category);
       setLogoPhotos(k.logo_url?[k.logo_url]:[]); setBannerPhotos(k.banner_url?[k.banner_url]:[]);
       setAcceptsNitume(!!k.accepts_nitume);
+      setKType(k.kiosk_type||""); setYears(k.years_experience!=null?String(k.years_experience):""); setAreas(k.areas_covered||""); setCharges(k.charges||"");
     }
     else { setName(userName); setLocation(town); }
     setListings(l||[]);
     setLoading(false);
+    if (k) loadTrack();
   }
 
   async function save() {
@@ -7812,10 +7967,12 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
     setSaving(true);
     const logo_url = logoPhotos[0]||null, banner_url = bannerPhotos[0]||null;
     if(kiosk) {
-      await sb.from("kiosks").update({ name, description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, updated_at:new Date().toISOString() }).eq("phone",phone);
+      const { error:upErr } = await sb.from("kiosks").update({ name, description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, kiosk_type:kType||null, years_experience:years===""?null:parseInt(years,10), areas_covered:areas.trim()||null, charges:charges.trim()||null, updated_at:new Date().toISOString() }).eq("phone",phone);
+      if (upErr) { setSaving(false); showToast("Couldn't save your kiosk. Try again.","error"); return; }
     } else {
       const slug = (name.trim()+"-"+phone.slice(-4)).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
-      await sb.from("kiosks").insert({ phone, seller_name:userName, name, description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, slug });
+      const { error:inErr } = await sb.from("kiosks").insert({ phone, seller_name:userName, name, description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, slug, kiosk_type:kType||null, years_experience:years===""?null:parseInt(years,10), areas_covered:areas.trim()||null, charges:charges.trim()||null });
+      if (inErr) { setSaving(false); showToast("Couldn't save your kiosk. Try again.","error"); return; }
     }
     let pendingMarketId = null;
     try { pendingMarketId = sessionStorage.getItem("kaziapa_pending_market_join"); } catch(e) {}
@@ -7871,6 +8028,15 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
             <Field label="What You Sell" value={category} onChange={setCategory} placeholder="e.g. Second hand clothes, shoes, bags..." />
             <Field label="Location / Where to Find You" value={location} onChange={setLocation} placeholder="e.g. Nakuru Market, Stall 14, next to KCB" />
             <Field label="Your Story (Why buy from you?)" value={desc} onChange={setDesc} placeholder="e.g. 5 years experience sourcing Grade A mtumba from Nairobi. Quality guaranteed, fair prices..." rows={4} />
+            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:7 }}>What best describes you?</label>
+            <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginBottom:14 }}>
+              {Object.keys(KIOSK_TYPES).map(k=>(
+                <div key={k} onClick={()=>setKType(kType===k?"":k)} style={{ padding:"8px 14px",borderRadius:20,fontSize:13,fontWeight:700,cursor:"pointer",background:kType===k?T.primary:T.card,color:kType===k?"#fff":T.text,border:`1px solid ${kType===k?T.primary:T.border}` }}>{KIOSK_TYPES[k]}</div>
+              ))}
+            </div>
+            <Field label="Years of experience" value={years} onChange={v=>setYears(v.replace(/\D/g,"").slice(0,2))} placeholder="e.g. 5" type="tel" />
+            <Field label="Areas you cover" value={areas} onChange={v=>setAreas(v.slice(0,200))} placeholder="e.g. Kasarani, Roysambu, Zimmerman, Ruaraka" />
+            <Field label="Your charges (optional)" value={charges} onChange={v=>setCharges(v.slice(0,300))} placeholder="e.g. Washing Ksh 300 per load, ironing Ksh 20 per piece" rows={2} />
             <div onClick={()=>setAcceptsNitume(v=>!v)} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:14, marginBottom:16, cursor:"pointer" }}>
               <div>
                 <div style={{ fontSize:13, fontWeight:700, color:T.text }}>🛍️ Accepts Nitume Requests</div>
@@ -7916,6 +8082,87 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
             <button onClick={shareKiosk} style={{ width:"100%",padding:13,marginBottom:20,background:T.accent,color:T.primary,border:"none",borderRadius:12,fontWeight:800,fontSize:14,cursor:"pointer" }}>
               🔗 Share My Kiosk
             </button>
+            {(()=>{
+              const C = { primary:T.primary, card:T.card, border:T.border, text:T.text, muted:T.textMuted };
+              const trend = dash ? (dash.views_7d - dash.views_prev_7d) : 0;
+              const days = (dash && dash.views_by_day) || [];
+              const maxN = Math.max(1, ...days.map(d=>d.n));
+              const checks = [
+                { ok:!!kiosk.banner_url, tip:"Add a photo of your business" },
+                { ok:!!kiosk.logo_url, tip:"Add your logo or profile photo" },
+                { ok:(kiosk.description||"").trim().length>=30, tip:"Write your story (at least a sentence or two)" },
+                { ok:!!kiosk.kiosk_type, tip:"Say what best describes you" },
+                { ok:kiosk.years_experience!=null && kiosk.years_experience!=="", tip:"Add your years of experience" },
+                { ok:!!kiosk.areas_covered, tip:"List the areas you cover" },
+                { ok:!!kiosk.charges, tip:"Add your charges" },
+                { ok:listings.length>=3, tip:"Post at least 3 items or services" },
+                { ok:testimonials.some(t=>!t.hidden), tip:"Ask a customer for a testimonial" },
+              ];
+              const done = checks.filter(c=>c.ok).length;
+              const pct = Math.round(done*100/checks.length);
+              const todo = checks.filter(c=>!c.ok);
+              return (
+                <div>
+                  {dash && (
+                    <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12 }}>
+                      <div style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12 }}>
+                        <div style={{ fontSize:11,color:T.textMuted,fontWeight:700 }}>Kiosk views (7 days)</div>
+                        <div style={{ fontSize:22,fontWeight:900,color:T.primary }}>{dash.views_7d}</div>
+                        <div style={{ fontSize:11,fontWeight:700,color:trend>=0?"#1E8E5A":"#C53030" }}>{trend>=0?"▲":"▼"} {Math.abs(trend)} vs last week</div>
+                      </div>
+                      <div style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12 }}>
+                        <div style={{ fontSize:11,color:T.textMuted,fontWeight:700 }}>Sales today</div>
+                        <div style={{ fontSize:22,fontWeight:900,color:T.primary }}>Ksh {Number(dash.sales_today||0).toLocaleString()}</div>
+                        <div style={{ fontSize:11,color:T.textMuted }}>{dash.completed_week} completed this week</div>
+                      </div>
+                      {dash.orders_to_confirm>0 && (
+                        <div onClick={onOpenOrders} style={{ gridColumn:"1 / span 2",background:T.accent,borderRadius:12,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer" }}>
+                          <div style={{ fontSize:13,fontWeight:800,color:T.primary }}>🔔 {dash.orders_to_confirm} order{dash.orders_to_confirm===1?"":"s"} waiting for your confirmation</div>
+                          <div style={{ fontSize:18,color:T.primary }}>→</div>
+                        </div>
+                      )}
+                      {days.length>0 && (
+                        <div style={{ gridColumn:"1 / span 2",background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12 }}>
+                          <div style={{ fontSize:11,color:T.textMuted,fontWeight:700,marginBottom:8 }}>Who is looking at your kiosk</div>
+                          <div style={{ display:"flex",alignItems:"flex-end",gap:6,height:56 }}>
+                            {days.map((d,i)=>(
+                              <div key={i} style={{ flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%" }}>
+                                <div style={{ fontSize:10,color:T.textMuted }}>{d.n}</div>
+                                <div style={{ width:"100%",height:Math.max(3,Math.round(d.n*36/maxN)),background:T.primary,borderRadius:4,opacity:d.n?1:0.25 }} />
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ display:"flex",gap:6,marginTop:4 }}>{days.map((d,i)=><div key={i} style={{ flex:1,textAlign:"center",fontSize:10,color:T.textMuted }}>{d.d}</div>)}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:14,marginBottom:12 }}>
+                    <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                      <div style={{ fontSize:14,fontWeight:800,color:T.text }}>Profile strength</div>
+                      <div style={{ fontSize:14,fontWeight:900,color:pct>=80?"#1E8E5A":T.primary }}>{pct}%</div>
+                    </div>
+                    <div style={{ height:8,background:T.border,borderRadius:6,marginTop:8,overflow:"hidden" }}><div style={{ width:pct+"%",height:"100%",background:pct>=80?"#1E8E5A":T.primary }} /></div>
+                    {todo.length>0
+                      ? <div style={{ marginTop:10 }}>
+                          <div style={{ fontSize:11,color:T.textMuted,fontWeight:700,marginBottom:4 }}>To improve your profile:</div>
+                          {todo.slice(0,3).map((c,i)=><div key={i} onClick={()=>setEditing(true)} style={{ fontSize:13,color:T.primary,padding:"4px 0",cursor:"pointer" }}>• {c.tip}</div>)}
+                        </div>
+                      : <div style={{ fontSize:12,color:"#1E8E5A",marginTop:8,fontWeight:700 }}>Great profile! Customers can trust what they see.</div>}
+                  </div>
+
+                  <div style={{ fontWeight:800,color:T.text,fontSize:15,marginBottom:10 }}>Your track record</div>
+                  <div style={{ marginBottom:16 }}><KioskTrackRecord rec={rec} kiosk={kiosk} C={C} /></div>
+
+                  <div style={{ fontWeight:800,color:T.text,fontSize:15,marginBottom:10 }}>Testimonials ({testimonials.filter(t=>!t.hidden).length})</div>
+                  <div style={{ marginBottom:16 }}>
+                    <KioskTestimonialList items={testimonials} C={C} onToggleHide={toggleHideTestimonial} />
+                    <div style={{ fontSize:11,color:T.textMuted,marginTop:4 }}>Only people who chatted or traded with you can leave one. Share your kiosk link and ask happy customers.</div>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
               <div style={{ fontWeight:800,color:T.text,fontSize:15 }}>My Listings ({listings.length})</div>
               <button onClick={onAddItem} style={{ padding:"7px 14px",background:T.primary,color:"#fff",border:"none",borderRadius:20,fontSize:12,fontWeight:700,cursor:"pointer" }}>+ Add Item</button>
