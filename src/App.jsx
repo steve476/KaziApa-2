@@ -7863,9 +7863,9 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
         {editing && (
           <div>
             <div style={{ fontWeight:800,color:T.text,fontSize:16,marginBottom:16 }}>🏪 {kiosk ? "Edit" : "Set Up"} Your Kiosk</div>
-            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:8 }}>Banner Image (shown at the top of your kiosk)</label>
+            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:8 }}>Business photo (your shop front, stall, vehicle or your work)</label>
             <PhotoUploader photos={bannerPhotos} setPhotos={setBannerPhotos} maxPhotos={1} />
-            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:8 }}>Logo</label>
+            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:8 }}>Logo or profile photo</label>
             <PhotoUploader photos={logoPhotos} setPhotos={setLogoPhotos} maxPhotos={1} />
             <Field label="Kiosk Name" value={name} onChange={setName} placeholder="e.g. Araff Mtumba Bales" />
             <Field label="What You Sell" value={category} onChange={setCategory} placeholder="e.g. Second hand clothes, shoes, bags..." />
@@ -7888,14 +7888,28 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem }) {
         )}
         {kiosk && !editing && (
           <div>
-            <div style={{ borderRadius:16,overflow:"hidden",marginBottom:16,position:"relative",height:kiosk.banner_url?150:"auto",background:kiosk.banner_url?`url(${kiosk.banner_url}) center/cover`:T.primary }}>
-              <div style={{ padding:20,background:kiosk.banner_url?"linear-gradient(to top,rgba(0,0,0,0.55),transparent 60%)":"transparent",height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end" }}>
-                <div style={{ display:"flex",alignItems:"center",gap:10 }}>
-                  {kiosk.logo_url && <img src={kiosk.logo_url} alt="" style={{ width:44,height:44,borderRadius:12,objectFit:"cover",border:"2px solid #fff" }} />}
-                  <div style={{ fontSize:20,fontWeight:900,color:"#fff" }}>{kiosk.name}</div>
+            <div style={{ borderRadius:16,overflow:"hidden",marginBottom:16,background:T.card,border:`1px solid ${T.border}` }}>
+              <div onClick={()=>{ if(!kiosk.banner_url) setEditing(true); }} style={{ position:"relative",height:170,background:kiosk.banner_url?`url(${kiosk.banner_url}) center/cover`:`linear-gradient(135deg,${T.primary},#003F8A)`,display:"flex",alignItems:"center",justifyContent:"center",cursor:kiosk.banner_url?"default":"pointer" }}>
+                {!kiosk.banner_url && (
+                  <div style={{ textAlign:"center",color:"#fff",padding:"0 20px" }}>
+                    <div style={{ fontSize:30 }}>📷</div>
+                    <div style={{ fontSize:14,fontWeight:800,marginTop:4 }}>Add a photo of your business</div>
+                    <div style={{ fontSize:11,opacity:0.85,marginTop:2 }}>Shop front, stall, vehicle or your work</div>
+                  </div>
+                )}
+                {kiosk.banner_url && (
+                  <div onClick={()=>setEditing(true)} style={{ position:"absolute",top:10,right:10,background:"rgba(0,0,0,0.55)",color:"#fff",borderRadius:20,padding:"5px 12px",fontSize:11,fontWeight:700,cursor:"pointer" }}>📷 Change photo</div>
+                )}
+                <div onClick={e=>{ e.stopPropagation(); if(!kiosk.logo_url) setEditing(true); }} style={{ position:"absolute",bottom:-38,left:16,width:84,height:84,borderRadius:20,background:"#fff",border:"3px solid #fff",boxShadow:"0 4px 14px rgba(0,0,0,0.18)",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:kiosk.logo_url?"default":"pointer" }}>
+                  {kiosk.logo_url
+                    ? <img src={kiosk.logo_url} alt="" style={{ width:"100%",height:"100%",objectFit:"cover" }} />
+                    : <div style={{ textAlign:"center",color:T.primary }}><div style={{ fontSize:24 }}>🏪</div><div style={{ fontSize:10,fontWeight:800 }}>+ Logo</div></div>}
                 </div>
-                <div style={{ fontSize:13,color:"rgba(255,255,255,0.85)",marginTop:4 }}>📍 {kiosk.location}</div>
-                {kiosk.category && <div style={{ background:"rgba(255,255,255,0.2)",borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:700,display:"inline-block",marginTop:8,color:"#fff",alignSelf:"flex-start" }}>{kiosk.category}</div>}
+              </div>
+              <div style={{ padding:"46px 16px 16px" }}>
+                <div style={{ fontSize:20,fontWeight:900,color:T.text }}>{kiosk.name}</div>
+                <div style={{ fontSize:13,color:T.textMid,marginTop:2 }}>📍 {kiosk.location}</div>
+                {kiosk.category && <div style={{ background:T.primarySoft,color:T.primary,borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:700,display:"inline-block",marginTop:8 }}>{kiosk.category}</div>}
               </div>
             </div>
             {kiosk.description && <div style={{ fontSize:13,color:T.textMid,marginBottom:16,lineHeight:1.6,background:T.card,padding:12,borderRadius:12,border:`1px solid ${T.border}` }}>{kiosk.description}</div>}
