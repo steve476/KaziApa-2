@@ -90,6 +90,7 @@ export default async function handler(req, res) {
       // things that point at listings / properties / kiosks must go first
       del("chats", "buyer_phone"), del("chats", "seller_phone"), del("chats", "sender_phone"),
       del("kiosk_markets", "kiosk_phone"), del("viewings", "agent_phone"), del("viewings", "tenant_phone"),
+      del("kiosk_testimonials", "author_phone"), del("kiosk_testimonials", "kiosk_phone"), del("kiosk_views", "kiosk_phone"), del("kiosk_views", "viewer_phone"),
       del("request_replies", "seller_phone"), del("listing_reports", "reporter_phone"), del("listing_unlocks", "tenant_phone"),
       del("market_members", "phone"), del("market_notice_reports", "reporter_phone"), del("market_notices", "phone"),
       del("market_spaces", "phone"), del("nitume_guide_markets", "phone"), del("notifications", "recipient_phone"),
