@@ -1012,6 +1012,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
           <div style={{ color:"#fff",fontWeight:700,fontSize:14 }}>{otherName}</div>
           <div style={{ fontSize:11,color:T.accent }}>{listing?.title}</div>
           <SellerPresence phone={otherPhone} light />
+          <KioskLink phone={otherPhone} light />
         </div>
       </div>
       {onViewListing && listing?.title && !/^(dm|status)-/.test(String(listing?.id||"")) && (
@@ -2633,6 +2634,7 @@ export default function KaziApa() {
                 <div style={{ fontWeight:700,color:T.text,fontSize:14 }}>{activeListing.seller_name}</div>
                 <SellerPresence phone={activeListing.seller_phone} />
                 {activeListing.verified && <div style={{ fontSize:11,color:T.success,fontWeight:600 }}>✓ Verified Seller</div>}
+                <KioskLink phone={activeListing.seller_phone} full />
               </div>
               <button onClick={()=>{ nav("chat","browse"); }}
                 style={{ background:T.surface,border:`1px solid ${T.border}`,borderRadius:10,padding:"8px 14px",fontSize:13,fontWeight:700,color:T.primary,cursor:"pointer" }}>
@@ -4989,6 +4991,33 @@ function KioskTestimonialForm({ kioskPhone, C, onDone, onLogin }) {
         <button onClick={submit} disabled={busy} style={{ flex:2,padding:10,background:C.primary,border:"none",borderRadius:10,fontWeight:800,fontSize:13,color:"#fff",cursor:"pointer" }}>{busy?"Saving...":"Post testimonial"}</button>
       </div>
     </div>
+  );
+}
+
+// Small "View kiosk" link: shows only if this person has a kiosk (used in chats and on listings)
+const _kioskLinkCache = {};
+function KioskLink({ phone, light, full }) {
+  const [ident, setIdent] = useState(()=>_kioskLinkCache[phone]===undefined ? undefined : _kioskLinkCache[phone]);
+  useEffect(()=>{
+    if (!phone) return;
+    if (_kioskLinkCache[phone]!==undefined) { setIdent(_kioskLinkCache[phone]); return; }
+    let alive = true;
+    (async ()=>{
+      const { data } = await sb.from("kiosks").select("slug,phone").eq("phone",phone).limit(1);
+      const v = data && data[0] ? (data[0].slug||data[0].phone) : null;
+      _kioskLinkCache[phone] = v;
+      if (alive) setIdent(v);
+    })();
+    return ()=>{ alive=false; };
+  },[phone]);
+  if (!ident) return null;
+  return (
+    <span role="button" onClick={(e)=>{ e.stopPropagation(); window.open(`/?kiosk=${ident}`,"_blank"); }}
+      style={ light
+        ? { display:"inline-block",marginTop:3,background:"rgba(255,255,255,0.18)",color:"#fff",borderRadius:12,padding:"3px 10px",fontSize:11,fontWeight:700,cursor:"pointer" }
+        : { display:"inline-block",marginTop:4,background:T.primarySoft,color:T.primary,borderRadius:12,padding:"4px 11px",fontSize:12,fontWeight:700,cursor:"pointer" } }>
+      🏪 {full?"View kiosk, work & ratings":"View kiosk"}
+    </span>
   );
 }
 
