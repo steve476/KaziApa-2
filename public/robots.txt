@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://kaziapa.co.ke/sitemap.xml
