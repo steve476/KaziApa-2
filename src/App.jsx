@@ -10139,7 +10139,9 @@ function OrdersScreen({ sb, phone, onBack }) {
 
 // ─── ADMIN PANEL ──────────────────────────────────────────────────────────
 function AdminPanel({ sb, onBack, showToast }) {
-  const [tab, setTab] = useState("reports");
+  const [tab, setTab] = useState("ceo");
+  const [ceo, setCeo] = useState(null);
+  const [ceoErr, setCeoErr] = useState(false);
   const [reports, setReports] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [revenueTotals, setRevenueTotals] = useState({});
@@ -10155,7 +10157,11 @@ function AdminPanel({ sb, onBack, showToast }) {
 
   async function loadTab() {
     setLoading(true);
-    if (tab==="reports") {
+    if (tab==="ceo") {
+      const { data, error } = await sb.rpc("ceo_dashboard");
+      setCeoErr(!!error || !data);
+      setCeo(error ? null : data);
+    } else if (tab==="reports") {
       const { data } = await sb.from("listings").select("*").gt("reports",0).order("reports",{ ascending:false });
       setReports(data||[]);
       const { data: stReps } = await sb.from("statuses").select("*").gt("reports",0).gt("expires_at", new Date().toISOString()).order("reports",{ ascending:false });
@@ -10345,7 +10351,7 @@ function AdminPanel({ sb, onBack, showToast }) {
           <span style={{ fontWeight:800,fontSize:18 }}>🛠️ Admin Panel</span>
         </div>
         <div style={{ display:"flex",gap:4,overflowX:"auto" }}>
-          {[["reports","🚩 Reports"],["notices","📢 Notices"],["hoods","🏘️ Hoods"],["revenue","💰 Revenue"],["users","👤 Users"],["housing","🏠 Housing"]].map(([key,label])=>(
+          {[["ceo","📊 CEO"],["reports","🚩 Reports"],["notices","📢 Notices"],["hoods","🏘️ Hoods"],["revenue","💰 Revenue"],["users","👤 Users"],["housing","🏠 Housing"]].map(([key,label])=>(
             <button key={key} onClick={()=>setTab(key)}
               style={{ padding:"10px 14px",background:tab===key?"#fff":"transparent",color:tab===key?T2.primary:"#fff",border:"none",borderRadius:"10px 10px 0 0",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap" }}>
               {label}
@@ -10356,6 +10362,80 @@ function AdminPanel({ sb, onBack, showToast }) {
 
       <div style={{ padding:16 }}>
         {loading && <div style={{ textAlign:"center",padding:30,color:T2.muted }}>Loading...</div>}
+
+        {!loading && tab==="ceo" && (
+          ceoErr || !ceo ? <div style={{ textAlign:"center",padding:30,color:T2.muted }}>Couldn't load the dashboard. Check that the CEO SQL was run, then reopen.</div> : (()=>{
+            const t = ceo.totals || {};
+            const pct = (a,b)=> b>0 ? Math.round((a-b)*100/b) : (a>0?100:0);
+            const trend = (a,b)=>{ const p=pct(a,b); return <span style={{ fontSize:11,fontWeight:700,color:p>=0?"#1E8E5A":"#C53030" }}>{p>=0?"▲":"▼"} {Math.abs(p)}% vs last week</span>; };
+            const Card = ({ label, big, sub, onClick })=>(
+              <div onClick={onClick} style={{ background:"#fff",border:`1px solid ${T2.border}`,borderRadius:12,padding:12,cursor:onClick?"pointer":"default" }}>
+                <div style={{ fontSize:11,color:T2.muted,fontWeight:700 }}>{label}</div>
+                <div style={{ fontSize:22,fontWeight:900,color:T2.primary,marginTop:2 }}>{big}</div>
+                <div style={{ marginTop:2 }}>{sub}</div>
+              </div>
+            );
+            const days = ceo.per_day || [];
+            const Bars = ({ title, k, color })=>{
+              const mx = Math.max(1, ...days.map(d=>Number(d[k])||0));
+              return (
+                <div style={{ background:"#fff",border:`1px solid ${T2.border}`,borderRadius:12,padding:12,marginBottom:10 }}>
+                  <div style={{ fontSize:12,fontWeight:800,color:T2.text,marginBottom:8 }}>{title}</div>
+                  <div style={{ display:"flex",alignItems:"flex-end",gap:3,height:64 }}>
+                    {days.map((d,i)=>(
+                      <div key={i} title={d.d+": "+d[k]} style={{ flex:1,height:Math.max(2,Math.round((Number(d[k])||0)*60/mx)),background:color,borderRadius:3,opacity:(Number(d[k])||0)?1:0.25 }} />
+                    ))}
+                  </div>
+                  <div style={{ display:"flex",justifyContent:"space-between",fontSize:10,color:T2.muted,marginTop:4 }}><span>{days[0]?.d}</span><span>Today: {days.length?days[days.length-1][k]:0}</span></div>
+                </div>
+              );
+            };
+            const att = ceo.attention || {};
+            const attItems = [
+              [att.reported_listings,"reported listings","reports"],[att.reported_statuses,"reported statuses","reports"],[att.reported_notices,"reported notices","notices"],
+              [att.struck_properties,"houses with strikes","housing"],[att.pending_hoods,"hoods waiting for review","hoods"],
+            ].filter(x=>x[0]>0);
+            const List = ({ title, rows })=>(
+              <div style={{ background:"#fff",border:`1px solid ${T2.border}`,borderRadius:12,padding:12,marginBottom:10 }}>
+                <div style={{ fontSize:12,fontWeight:800,color:T2.text,marginBottom:6 }}>{title}</div>
+                {(rows||[]).length===0 ? <div style={{ fontSize:12,color:T2.muted }}>Nothing yet.</div> : rows.map((r,i)=>(
+                  <div key={i} style={{ display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",borderBottom:i<rows.length-1?`1px solid ${T2.border}`:"none" }}><span>{r.name}</span><b>{r.total!=null?"Ksh "+Number(r.total).toLocaleString()+" ("+r.n+")":r.n}</b></div>
+                ))}
+              </div>
+            );
+            return (
+              <div>
+                <div style={{ fontSize:13,fontWeight:800,color:T2.text,marginBottom:8 }}>How KaziApa is doing</div>
+                <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12 }}>
+                  <Card label="People signed up" big={t.users} sub={<span style={{ fontSize:11,color:T2.muted }}>+{t.users_7d} this week · {trend(t.users_7d,t.users_prev_7d)}</span>} />
+                  <Card label="Active in last 7 days" big={t.active_7d} sub={<span style={{ fontSize:11,color:T2.muted }}>{t.active_today} today</span>} />
+                  <Card label="Listings" big={t.listings} sub={<span style={{ fontSize:11,color:T2.muted }}>+{t.listings_7d} this week · {trend(t.listings_7d,t.listings_prev_7d)}</span>} />
+                  <Card label="Messages (7 days)" big={t.messages_7d} sub={<span style={{ fontSize:11,color:T2.muted }}>{trend(t.messages_7d,t.messages_prev_7d)}</span>} />
+                  <Card label="Money in (7 days)" big={"Ksh "+Number(t.revenue_7d||0).toLocaleString()} sub={<span style={{ fontSize:11,color:T2.muted }}>{trend(Number(t.revenue_7d||0),Number(t.revenue_prev_7d||0))}</span>} onClick={()=>setTab("revenue")} />
+                  <Card label="Total money in" big={"Ksh "+Number(t.revenue_total||0).toLocaleString()} sub={<span style={{ fontSize:11,color:T2.muted }}>{t.paid_orders_7d} paid orders this week</span>} />
+                  <Card label="Kiosks" big={t.kiosks} sub={<span style={{ fontSize:11,color:T2.muted }}>{t.kiosk_views_7d} views · {t.testimonials} testimonials</span>} />
+                  <Card label="Chat threads" big={t.chat_threads} sub={<span style={{ fontSize:11,color:T2.muted }}>people talking to each other</span>} />
+                </div>
+
+                {attItems.length>0 && (
+                  <div style={{ background:"#FFF7E6",border:"1px solid #F5C36B",borderRadius:12,padding:12,marginBottom:12 }}>
+                    <div style={{ fontSize:12,fontWeight:800,color:"#8A5A00",marginBottom:6 }}>Needs your attention</div>
+                    {attItems.map((x,i)=>(<div key={i} onClick={()=>setTab(x[2])} style={{ fontSize:13,color:"#8A5A00",padding:"3px 0",cursor:"pointer" }}>• {x[0]} {x[1]} →</div>))}
+                  </div>
+                )}
+
+                <Bars title="New people per day (14 days)" k="users" color="#0d6efd" />
+                <Bars title="New listings per day" k="listings" color="#1E8E5A" />
+                <Bars title="Messages per day" k="messages" color="#F5A623" />
+                <Bars title="Money in per day (Ksh)" k="revenue" color="#6B4EFF" />
+                <List title="Top categories this week (new listings)" rows={ceo.top_categories} />
+                <List title="Top towns this week (new listings)" rows={ceo.top_towns} />
+                <List title="Where the money came from (last 30 days)" rows={ceo.revenue_by_type} />
+                <div style={{ fontSize:11,color:T2.muted,textAlign:"center",marginTop:6 }}>Downloads: check Google Play Console. This page counts real people who signed up and used the app.</div>
+              </div>
+            );
+          })()
+        )}
 
         {!loading && tab==="reports" && (
           reports.length===0 ? <div style={{ textAlign:"center",padding:30,color:T2.muted }}>No reported listings. ✅</div> :
