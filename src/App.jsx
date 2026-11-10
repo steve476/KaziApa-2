@@ -1318,7 +1318,7 @@ export default function KaziApa() {
     document.addEventListener("visibilitychange", onVis);
     return ()=>document.removeEventListener("visibilitychange", onVis);
   },[authStep]);
-  const SAFE_SCREENS = ["home","browse","requests","post","profile","chats","kiosk","myListings","guidelines","privacy","terms","about","admin","housing","orders","nitume","market"];
+  const SAFE_SCREENS = ["home","browse","requests","post","profile","chats","kiosk","kiosks","myListings","guidelines","privacy","terms","about","admin","housing","orders","nitume","market"];
   // Note: "marketProfile" is intentionally NOT in SAFE_SCREENS — it depends on
   // activeMarket, which isn't safe to restore blindly after a raw page refresh.
   // Note: "rentTracker" is intentionally NOT in SAFE_SCREENS — like "chat" and
@@ -2451,6 +2451,12 @@ export default function KaziApa() {
             <div style={{ color:"#fff",fontWeight:800,fontSize:15 }}>{tr(lang,"Need something sourced or done?")}</div>
             <div style={{ color:"rgba(255,255,255,0.65)",fontSize:12,marginTop:3 }}>{tr(lang,"Shopping, fashion sourcing, event photography & more. →")}</div>
           </div>
+          <div role="button" tabIndex={0} className="ka-press" style={{ margin:"10px 16px 4px",background:`linear-gradient(130deg,#F5A623,#E8590C)`,borderRadius:18,padding:"16px 18px",cursor:"pointer" }}
+            onClick={()=>nav("kiosks","home")} onKeyDown={e=>{ if(e.key==="Enter") nav("kiosks","home"); }}>
+            <div style={{ color:"#fff",fontSize:10,fontWeight:700,letterSpacing:1.2,marginBottom:5,opacity:0.95 }}>FIND A PRO</div>
+            <div style={{ color:"#fff",fontWeight:800,fontSize:16 }}>Fundis, transport, shops & services</div>
+            <div style={{ color:"rgba(255,255,255,0.92)",fontSize:12,marginTop:3 }}>See their work, ratings and reviews before you call →</div>
+          </div>
           <div role="button" tabIndex={0} className="ka-press" style={{ margin:"10px 16px 4px",background:`linear-gradient(130deg,#12A05F,#0B6E7A)`,borderRadius:18,padding:"16px 18px",cursor:"pointer",display:"flex",alignItems:"center",gap:12 }}
             onClick={()=>nav("market","home")} onKeyDown={e=>{ if(e.key==="Enter") nav("market","home"); }}>
             <div style={{ flex:1,minWidth:0 }}>
@@ -2761,6 +2767,10 @@ export default function KaziApa() {
       {screen==="contact" && <ContactScreen onBack={()=>nav("profile","profile")} />}
 
       {/* KIOSK */}
+      {screen==="kiosks" && (
+        <KioskDirectoryScreen onBack={()=>nav("home","home")} />
+      )}
+
       {screen==="kiosk" && (
         <KioskScreen phone={phone} userName={userName} town={userTown} showToast={showToast} onBack={()=>nav("profile","profile")} onAddItem={()=>nav("post","post")} onOpenOrders={()=>nav("orders","profile")} />
       )}
@@ -3028,6 +3038,7 @@ export default function KaziApa() {
             {[
               { icon:"💚",label:"WhatsApp Notifications", action:()=>showToast("WhatsApp notifications are automatic — no setup needed! 💚") },
               { icon:"🏪",label:"My Kiosk",           action:()=>nav("kiosk","profile") },
+              { icon:"🔎",label:"Find a Pro",         action:()=>nav("kiosks","home") },
               { icon:"💬",label:"My Chats",           action:()=>nav("chats","profile") },
               { icon:"📦",label:"My Listings",       action:()=>nav("myListings","profile") },
               { icon:"🛒",label:"My Orders",          action:()=>nav("orders","profile") },
@@ -4981,6 +4992,55 @@ function KioskTestimonialForm({ kioskPhone, C, onDone, onLogin }) {
   );
 }
 
+function KioskTimeline({ items, C }) {
+  if (!items || items.length===0) return <div style={{ fontSize:13,color:C.muted,padding:"6px 0 2px" }}>No work history yet.</div>;
+  const when = (iso)=>{ try { return new Date(iso).toLocaleDateString([],{ month:"short", year:"numeric" }); } catch(e) { return ""; } };
+  return (
+    <div>
+      {items.map((it,i)=>{
+        if (it.kind==="work") {
+          const after = Array.isArray(it.after_photos) ? it.after_photos : [];
+          return (
+            <div key={"w"+it.id} style={{ background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:12,marginBottom:10 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",gap:8 }}>
+                <div style={{ fontSize:14,fontWeight:800,color:C.text }}>🛠️ {it.title}</div>
+                <div style={{ fontSize:11,color:C.muted,whiteSpace:"nowrap" }}>{when(it.at)}</div>
+              </div>
+              {(it.area || it.price_note) && <div style={{ fontSize:12,color:C.muted,marginTop:3 }}>{it.area?"📍 "+it.area:""}{it.area && it.price_note?" · ":""}{it.price_note?"💰 "+it.price_note:""}</div>}
+              {it.description && <div style={{ fontSize:13,color:C.text,marginTop:6,lineHeight:1.5 }}>{it.description}</div>}
+              {(it.before_photo || after.length>0) && (
+                <div style={{ display:"flex",gap:6,marginTop:8,overflowX:"auto" }}>
+                  {it.before_photo && (
+                    <div style={{ position:"relative",flexShrink:0 }}>
+                      <img src={it.before_photo} alt="Before" style={{ width:120,height:120,objectFit:"cover",borderRadius:10 }} />
+                      <div style={{ position:"absolute",left:6,top:6,background:"rgba(0,0,0,0.6)",color:"#fff",fontSize:10,fontWeight:800,borderRadius:8,padding:"2px 7px" }}>BEFORE</div>
+                    </div>
+                  )}
+                  {after.map((u,j)=>(
+                    <div key={j} style={{ position:"relative",flexShrink:0 }}>
+                      <img src={u} alt="After" style={{ width:120,height:120,objectFit:"cover",borderRadius:10 }} />
+                      {j===0 && it.before_photo && <div style={{ position:"absolute",left:6,top:6,background:"#1E8E5A",color:"#fff",fontSize:10,fontWeight:800,borderRadius:8,padding:"2px 7px" }}>AFTER</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        }
+        return (
+          <div key={it.kind+it.id+i} style={{ display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.card,border:"1px solid "+C.border,borderRadius:12,marginBottom:6 }}>
+            <div style={{ fontSize:16 }}>{it.kind==="order"?"✅":"🚚"}</div>
+            <div style={{ flex:1,minWidth:0 }}>
+              <div style={{ fontSize:13,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{it.kind==="order"?"Order completed — ":"Nitume job done — "}{it.title}</div>
+            </div>
+            <div style={{ fontSize:11,color:C.muted,whiteSpace:"nowrap" }}>{when(it.at)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PublicKiosk({ phone, onClose }) {
   const [kiosk, setKiosk] = useState(null);
   const [listings, setListings] = useState([]);
@@ -4988,6 +5048,7 @@ function PublicKiosk({ phone, onClose }) {
   const [notFound, setNotFound] = useState(false);
   const [rec, setRec] = useState(null);
   const [testimonials, setTestimonials] = useState([]);
+  const [timeline, setTimeline] = useState([]);
 
   async function loadTestimonials(kp) {
     const { data } = await sb.rpc("kiosk_testimonials_get", { p_phone:kp });
@@ -5004,6 +5065,7 @@ function PublicKiosk({ phone, onClose }) {
       // track record + testimonials (totals only), and count this visit once per browser per day
       sb.rpc("kiosk_track_record", { p_phone:k.phone }).then(({ data })=>{ if (data && typeof data==="object") setRec(data); });
       loadTestimonials(k.phone);
+      sb.rpc("kiosk_timeline", { p_phone:k.phone }).then(({ data })=>{ if (Array.isArray(data)) setTimeline(data); });
       try {
         const key = "kz_kview_"+k.phone+"_"+new Date().toISOString().slice(0,10);
         if (!localStorage.getItem(key)) { localStorage.setItem(key,"1"); sb.rpc("kiosk_record_view", { p_phone:k.phone }); }
@@ -5038,6 +5100,9 @@ function PublicKiosk({ phone, onClose }) {
 
         <div style={{ fontWeight:800,color:T2.text,fontSize:15,marginTop:20,marginBottom:10 }}>Track record</div>
         <KioskTrackRecord rec={rec} kiosk={kiosk} C={T2} />
+
+        <div style={{ fontWeight:800,color:T2.text,fontSize:15,marginTop:20,marginBottom:10 }}>Work history</div>
+        <KioskTimeline items={timeline} C={T2} />
 
         <div style={{ fontWeight:800,color:T2.text,fontSize:15,marginTop:20,marginBottom:10 }}>Testimonials ({testimonials.length})</div>
         <KioskTestimonialList items={testimonials} C={T2} />
@@ -7908,6 +7973,57 @@ function NitumeScreen({ town, showToast, onBack, userName, phone }) {
   );
 }
 
+function KioskDirectoryScreen({ onBack }) {
+  const [q, setQ] = useState("");
+  const [type, setType] = useState("");
+  const [rows, setRows] = useState(null);
+  const [err, setErr] = useState(false);
+  useEffect(()=>{
+    let alive = true;
+    const t = setTimeout(async ()=>{
+      const { data, error } = await sb.rpc("kiosk_directory", { p_q:q.trim()||null, p_type:type||null, p_limit:40 });
+      if (!alive) return;
+      if (error) { setErr(true); setRows([]); return; }
+      setErr(false); setRows(Array.isArray(data)?data:[]);
+    }, 300);
+    return ()=>{ alive=false; clearTimeout(t); };
+  },[q,type]);
+  const chips = [["","All"],["shop","🏪 Shops"],["transport","🚗 Transport"],["worker","🛠️ Workers"],["service","💼 Services"]];
+  return (
+    <div>
+      <BackHeader title="🔎 Find a Pro" onBack={onBack} />
+      <div style={{ padding:16 }}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search: laundry, fundi, mtumba, Kasarani..." style={{ width:"100%",padding:"12px 14px",borderRadius:12,border:`1px solid ${T.border}`,fontSize:14,boxSizing:"border-box",background:T.card,color:T.text,outline:"none" }} />
+        <div style={{ display:"flex",gap:8,overflowX:"auto",padding:"12px 0" }}>
+          {chips.map(([k,l])=>(
+            <div key={k||"all"} onClick={()=>setType(k)} style={{ padding:"7px 14px",borderRadius:20,fontSize:12,fontWeight:700,whiteSpace:"nowrap",cursor:"pointer",background:type===k?T.primary:T.card,color:type===k?"#fff":T.text,border:`1px solid ${type===k?T.primary:T.border}` }}>{l}</div>
+          ))}
+        </div>
+        {rows===null && <div style={{ textAlign:"center",padding:30,color:T.textMuted }}>Loading...</div>}
+        {rows && rows.length===0 && <div style={{ textAlign:"center",padding:30,color:T.textMuted,fontSize:14 }}>{err?"Couldn't load. Check your connection and try again.":"No kiosks found. Try a different word."}</div>}
+        {(rows||[]).map(k=>(
+          <div key={k.ident} onClick={()=>window.open(`/?kiosk=${k.ident}`,"_blank")} style={{ display:"flex",gap:12,padding:12,background:T.card,border:`1px solid ${T.border}`,borderRadius:14,marginBottom:10,cursor:"pointer" }}>
+            {k.logo_url ? <img src={k.logo_url} alt="" style={{ width:56,height:56,borderRadius:14,objectFit:"cover",flexShrink:0 }} />
+                        : <div style={{ width:56,height:56,borderRadius:14,background:T.primarySoft,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0 }}>🏪</div>}
+            <div style={{ flex:1,minWidth:0 }}>
+              <div style={{ fontSize:14,fontWeight:800,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{k.name}</div>
+              <div style={{ fontSize:12,color:T.textMuted,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>
+                {KIOSK_TYPES[k.kiosk_type]?KIOSK_TYPES[k.kiosk_type].replace(/^\S+\s/,"")+" · ":""}{k.category||""}{k.location?" · 📍 "+k.location:""}
+              </div>
+              <div style={{ display:"flex",flexWrap:"wrap",gap:10,marginTop:6,fontSize:12,color:T.text }}>
+                {k.rating_count>0 && <span style={{ fontWeight:800 }}>★ {k.rating_avg} <span style={{ color:T.textMuted,fontWeight:400 }}>({k.rating_count})</span></span>}
+                {k.completed>0 && <span>✅ {k.completed} done</span>}
+                {k.work_count>0 && <span>📸 {k.work_count} job{k.work_count===1?"":"s"}</span>}
+                {k.years_experience>0 && <span>⏳ {k.years_experience} yr{k.years_experience===1?"":"s"}</span>}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOpenOrders }) {
   const [kiosk, setKiosk]       = useState(null);
   const [listings, setListings] = useState([]);
@@ -7928,8 +8044,36 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
   const [rec, setRec]           = useState(null);
   const [dash, setDash]         = useState(null);
   const [testimonials, setTestimonials] = useState([]);
+  const [work, setWork]         = useState([]);
+  const [workForm, setWorkForm] = useState(null);
+  const [workSaving, setWorkSaving] = useState(false);
 
   useEffect(()=>{ load(); },[]);
+
+  async function loadWork() {
+    const { data } = await sb.from("kiosk_work").select("*").eq("kiosk_phone",phone).order("created_at",{ ascending:false });
+    setWork(data||[]);
+  }
+  function newWork() { setWorkForm({ id:null, title:"", description:"", area:"", price_note:"", done_on:"", before:[], after:[] }); }
+  function editWork(w) { setWorkForm({ id:w.id, title:w.title||"", description:w.description||"", area:w.area||"", price_note:w.price_note||"", done_on:w.done_on||"", before:w.before_photo?[w.before_photo]:[], after:w.after_photos||[] }); }
+  async function saveWork() {
+    const f = workForm;
+    if ((f.title||"").trim().length<3) { showToast("Give the work a title (at least 3 letters).","error"); return; }
+    setWorkSaving(true);
+    const row = { kiosk_phone:phone, title:f.title.trim(), description:f.description.trim()||null, area:f.area.trim()||null, price_note:f.price_note.trim()||null,
+      before_photo:f.before[0]||null, after_photos:f.after, done_on:f.done_on||null };
+    const { error } = f.id ? await sb.from("kiosk_work").update(row).eq("id",f.id) : await sb.from("kiosk_work").insert(row);
+    setWorkSaving(false);
+    if (error) { showToast("Couldn't save. Try again.","error"); return; }
+    setWorkForm(null); showToast("Work saved ✅"); loadWork();
+  }
+  async function deleteWork(w) {
+    const ok = await askConfirm("Delete this work from your kiosk?");
+    if (!ok) return;
+    const { error } = await sb.from("kiosk_work").delete().eq("id",w.id);
+    if (error) { showToast("Couldn't delete. Try again.","error"); return; }
+    loadWork();
+  }
 
   async function loadTrack() {
     const [r, d, t] = await Promise.all([
@@ -7959,7 +8103,7 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
     else { setName(userName); setLocation(town); }
     setListings(l||[]);
     setLoading(false);
-    if (k) loadTrack();
+    if (k) { loadTrack(); loadWork(); }
   }
 
   async function save() {
@@ -8003,6 +8147,26 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
 
   return (
     <div>
+      {workForm && (
+        <div onClick={()=>setWorkForm(null)} style={{ position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:998,display:"flex",alignItems:"flex-end" }}>
+          <div onClick={e=>e.stopPropagation()} style={{ background:T.card,width:"100%",borderRadius:"18px 18px 0 0",padding:20,maxHeight:"90vh",overflowY:"auto" }}>
+            <div style={{ fontWeight:800,fontSize:16,color:T.text,marginBottom:14 }}>{workForm.id?"Edit work":"Add work you have done"}</div>
+            <Field label="What did you do? *" value={workForm.title} onChange={v=>setWorkForm({ ...workForm, title:v.slice(0,80) })} placeholder="e.g. Washed and ironed 40 school uniforms" />
+            <Field label="Details (optional)" value={workForm.description} onChange={v=>setWorkForm({ ...workForm, description:v.slice(0,500) })} placeholder="How it went, what the customer needed" rows={3} />
+            <Field label="Area (optional)" value={workForm.area} onChange={v=>setWorkForm({ ...workForm, area:v.slice(0,100) })} placeholder="e.g. Kasarani" />
+            <Field label="Price or charge (optional)" value={workForm.price_note} onChange={v=>setWorkForm({ ...workForm, price_note:v.slice(0,100) })} placeholder="e.g. Ksh 4,000 for the whole job" />
+            <Field label="Date done (optional)" value={workForm.done_on} onChange={v=>setWorkForm({ ...workForm, done_on:v })} type="date" />
+            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:7 }}>Before photo (optional)</label>
+            <div style={{ marginBottom:14 }}><PhotoUploader photos={workForm.before} setPhotos={p=>setWorkForm(f=>({ ...f, before:typeof p==="function"?p(f.before):p }))} maxPhotos={1} /></div>
+            <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:7 }}>Photos of the finished work (up to 4)</label>
+            <div style={{ marginBottom:14 }}><PhotoUploader photos={workForm.after} setPhotos={p=>setWorkForm(f=>({ ...f, after:typeof p==="function"?p(f.after):p }))} maxPhotos={4} /></div>
+            <div style={{ display:"flex",gap:8,marginTop:6 }}>
+              <button onClick={()=>setWorkForm(null)} style={{ flex:1,padding:12,background:T.border,color:T.text,border:"none",borderRadius:11,fontWeight:700,cursor:"pointer" }}>Cancel</button>
+              <button onClick={saveWork} disabled={workSaving} style={{ flex:2,padding:12,background:T.primary,color:"#fff",border:"none",borderRadius:11,fontWeight:800,cursor:"pointer",opacity:workSaving?0.6:1 }}>{workSaving?"Saving...":"Save work"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <BackHeader title="🏪 My Kiosk" onBack={onBack} right={
         <button onClick={()=>setEditing(!editing)} style={{ background:T.accent,border:"none",borderRadius:20,padding:"6px 14px",fontSize:12,fontWeight:800,color:T.primary,cursor:"pointer" }}>
           {editing ? "Cancel" : "Edit"}
@@ -8096,6 +8260,7 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
                 { ok:!!kiosk.areas_covered, tip:"List the areas you cover" },
                 { ok:!!kiosk.charges, tip:"Add your charges" },
                 { ok:listings.length>=3, tip:"Post at least 3 items or services" },
+                { ok:work.length>=1, tip:"Add your first job with photos" },
                 { ok:testimonials.some(t=>!t.hidden), tip:"Ask a customer for a testimonial" },
               ];
               const done = checks.filter(c=>c.ok).length;
@@ -8154,6 +8319,31 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
 
                   <div style={{ fontWeight:800,color:T.text,fontSize:15,marginBottom:10 }}>Your track record</div>
                   <div style={{ marginBottom:16 }}><KioskTrackRecord rec={rec} kiosk={kiosk} C={C} /></div>
+
+                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+                    <div style={{ fontWeight:800,color:T.text,fontSize:15 }}>My work ({work.length})</div>
+                    <div onClick={newWork} style={{ background:T.primary,color:"#fff",borderRadius:20,padding:"7px 14px",fontSize:12,fontWeight:800,cursor:"pointer" }}>+ Add work</div>
+                  </div>
+                  <div style={{ marginBottom:16 }}>
+                    {work.length===0 && <div style={{ fontSize:13,color:T.textMuted,padding:"2px 0 6px" }}>Show what you have done: jobs, before and after photos, your best work. Customers trust what they can see.</div>}
+                    {work.map(w=>(
+                      <div key={w.id} style={{ background:T.card,border:`1px solid ${T.border}`,borderRadius:12,padding:12,marginBottom:8 }}>
+                        <div style={{ display:"flex",gap:10 }}>
+                          {(w.after_photos&&w.after_photos[0]) || w.before_photo
+                            ? <img src={(w.after_photos&&w.after_photos[0])||w.before_photo} alt="" style={{ width:64,height:64,borderRadius:10,objectFit:"cover",flexShrink:0 }} />
+                            : <div style={{ width:64,height:64,borderRadius:10,background:T.primarySoft,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0 }}>🛠️</div>}
+                          <div style={{ flex:1,minWidth:0 }}>
+                            <div style={{ fontSize:14,fontWeight:800,color:T.text }}>{w.title}</div>
+                            <div style={{ fontSize:12,color:T.textMuted,marginTop:2 }}>{w.area?"📍 "+w.area:""}{w.area&&w.done_on?" · ":""}{w.done_on||""}</div>
+                            <div style={{ display:"flex",gap:14,marginTop:6 }}>
+                              <span onClick={()=>editWork(w)} style={{ fontSize:12,fontWeight:700,color:T.primary,cursor:"pointer" }}>Edit</span>
+                              <span onClick={()=>deleteWork(w)} style={{ fontSize:12,fontWeight:700,color:"#C53030",cursor:"pointer" }}>Delete</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
 
                   <div style={{ fontWeight:800,color:T.text,fontSize:15,marginBottom:10 }}>Testimonials ({testimonials.filter(t=>!t.hidden).length})</div>
                   <div style={{ marginBottom:16 }}>
