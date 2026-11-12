@@ -8129,23 +8129,31 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
       setAcceptsNitume(!!k.accepts_nitume);
       setKType(k.kiosk_type||""); setYears(k.years_experience!=null?String(k.years_experience):""); setAreas(k.areas_covered||""); setCharges(k.charges||"");
     }
-    else { setName(userName); setLocation(town); }
+    else { setName(""); setLocation(town); }
     setListings(l||[]);
     setLoading(false);
     if (k) { loadTrack(); loadWork(); }
   }
 
   async function save() {
-    if(!name.trim()) { showToast("Enter your kiosk name","error"); return; }
+    if(name.trim().length<3) { showToast("Give your kiosk a name of at least 3 letters","error"); return; }
     setSaving(true);
     const logo_url = logoPhotos[0]||null, banner_url = bannerPhotos[0]||null;
     if(kiosk) {
-      const { error:upErr } = await sb.from("kiosks").update({ name, description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, kiosk_type:kType||null, years_experience:years===""?null:parseInt(years,10), areas_covered:areas.trim()||null, charges:charges.trim()||null, updated_at:new Date().toISOString() }).eq("phone",phone);
+      const { error:upErr } = await sb.from("kiosks").update({ name:name.trim(), description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, kiosk_type:kType||null, years_experience:years===""?null:parseInt(years,10), areas_covered:areas.trim()||null, charges:charges.trim()||null, updated_at:new Date().toISOString() }).eq("phone",phone);
       if (upErr) { setSaving(false); showToast("Couldn't save your kiosk. Try again.","error"); return; }
     } else {
-      const slug = (name.trim()+"-"+phone.slice(-4)).toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"");
-      const { error:inErr } = await sb.from("kiosks").insert({ phone, seller_name:userName, name, description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, slug, kiosk_type:kType||null, years_experience:years===""?null:parseInt(years,10), areas_covered:areas.trim()||null, charges:charges.trim()||null });
-      if (inErr) { setSaving(false); showToast("Couldn't save your kiosk. Try again.","error"); return; }
+      const slugBase = name.trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/(^-|-$)/g,"").slice(0,40) || "kiosk";
+  // random ending instead of phone digits, so no part of a phone number is in the public address
+  const newSlug = ()=> slugBase+"-"+Math.random().toString(36).slice(2,6);
+  const tryInsert = (slug)=>sb.from("kiosks").insert({ phone, seller_name:userName, name:name.trim(), description:desc, location, category, logo_url, banner_url, accepts_nitume:acceptsNitume, slug, kiosk_type:kType||null, years_experience:years===""?null:parseInt(years,10), areas_covered:areas.trim()||null, charges:charges.trim()||null });
+  let inErr = null;
+  for (let attempt=0; attempt<3; attempt++) {
+    const r = await tryInsert(newSlug());
+    inErr = r.error;
+    if (!inErr || inErr.code!=="23505") break;
+  }
+  if (inErr) { setSaving(false); showToast("Couldn't save your kiosk. Try again.","error"); return; }
     }
     let pendingMarketId = null;
     try { pendingMarketId = sessionStorage.getItem("kaziapa_pending_market_join"); } catch(e) {}
@@ -8217,7 +8225,10 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
             <PhotoUploader photos={bannerPhotos} setPhotos={setBannerPhotos} maxPhotos={1} />
             <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:8 }}>Logo or profile photo</label>
             <PhotoUploader photos={logoPhotos} setPhotos={setLogoPhotos} maxPhotos={1} />
-            <Field label="Kiosk Name" value={name} onChange={setName} placeholder="e.g. Araff Mtumba Bales" />
+            <Field label="Kiosk name (your business or trade name)" value={name} onChange={v=>setName(v.slice(0,70))} placeholder="e.g. Araff Mtumba Bales, Mama Fua Ngumu, Tony Fundi Stima" />
+            {!name.trim() && userName && (
+              <div onClick={()=>setName(userName)} style={{ margin:"-6px 0 14px",fontSize:12,fontWeight:700,color:T.primary,cursor:"pointer" }}>I trade under my own name: use "{userName}"</div>
+            )}
             <Field label="What You Sell" value={category} onChange={setCategory} placeholder="e.g. Second hand clothes, shoes, bags..." />
             <Field label="Location / Where to Find You" value={location} onChange={setLocation} placeholder="e.g. Nakuru Market, Stall 14, next to KCB" />
             <Field label="Your Story (Why buy from you?)" value={desc} onChange={setDesc} placeholder="e.g. 5 years experience sourcing Grade A mtumba from Nairobi. Quality guaranteed, fair prices..." rows={4} />
