@@ -1,14 +1,38 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    {
+      "source": "/kiosk/:slug",
+      "destination": "/api/kiosk-page?slug=:slug"
+    },
+    {
+      "source": "/kiosks",
+      "destination": "/api/kiosk-page?list=1"
+    },
+    {
+      "source": "/sitemap-kiosks.xml",
+      "destination": "/api/kiosk-page?sitemap=1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "X-Content-Type-Options", "value": "nosniff" },
-        { "key": "X-Frame-Options", "value": "DENY" },
-        { "key": "X-XSS-Protection", "value": "1; mode=block" }
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
       ]
     }
   ]
