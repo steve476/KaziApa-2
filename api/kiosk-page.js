@@ -35,7 +35,7 @@ const safeUrl = (u) => (typeof u === "string" && /^https:\/\/[^\s"'<>]+$/.test(u
 const cut = (t, n) => { t = clean(t); return t.length > n ? t.slice(0, n - 1).trimEnd() + "…" : t; };
 const when = (iso) => { try { return new Date(iso).toLocaleDateString("en-GB", { month: "short", year: "numeric" }); } catch (e) { return ""; } };
 
-const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;color:#0A1628;background:#F4F8FF;line-height:1.6}a{color:#0066CC}.wrap{max-width:860px;margin:0 auto;padding:0 20px}header.top{background:#0066CC;color:#fff}.nav{display:flex;align-items:center;justify-content:space-between;padding:14px 0}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:22px;color:#fff;text-decoration:none}.logo{width:38px;height:38px;border-radius:10px;background:#F5A623;color:#0066CC;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900}.btn{display:inline-block;background:#F5A623;color:#0A1628;font-weight:800;text-decoration:none;padding:12px 20px;border-radius:14px;font-size:15px}.btn.blue{background:#0066CC;color:#fff}.crumbs{font-size:13px;padding-bottom:8px}.crumbs a{color:#fff}.cover{height:190px;background:#003F8A center/cover no-repeat}.cover img{width:100%;height:100%;object-fit:cover;display:block}.profile{display:flex;gap:14px;align-items:flex-end;margin-top:-38px;position:relative}.avatar{width:84px;height:84px;border-radius:20px;background:#fff;border:3px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.18);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;color:#0066CC;flex-shrink:0}.avatar img{width:100%;height:100%;object-fit:cover}h1{font-size:clamp(24px,5vw,32px);line-height:1.2;margin-top:14px}.meta{color:#415A77;font-size:14px;margin:4px 0 10px}.pill{display:inline-block;background:#E8F2FF;color:#0066CC;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;margin-right:6px}section{padding:22px 0 4px}h2{font-size:21px;font-weight:900;margin-bottom:10px}p{margin-bottom:10px;color:#243B55}.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.tile{background:#fff;border:1px solid #DCE7F5;border-radius:12px;padding:12px 8px;text-align:center}.tile b{display:block;font-size:20px;color:#0066CC}.tile span{font-size:12px;color:#5B7391}.card{background:#fff;border:1px solid #DCE7F5;border-radius:14px;padding:14px;margin-bottom:10px}.card h3{font-size:16px;margin-bottom:4px}.card small{color:#5B7391}.imgs{display:flex;gap:6px;overflow-x:auto;margin-top:8px}.imgs img{width:120px;height:120px;object-fit:cover;border-radius:10px;flex-shrink:0}.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}.item{background:#fff;border:1px solid #DCE7F5;border-radius:14px;overflow:hidden}.item img{width:100%;height:130px;object-fit:cover;display:block}.item div{padding:10px}.item b{display:block;font-size:14px}.stars{color:#F5A623;letter-spacing:1px}.band{background:linear-gradient(130deg,#0066CC,#003F8A);color:#fff;border-radius:18px;padding:22px;margin:24px 0}.band h2{color:#fff}.band p{color:#E8F2FF}footer{background:#0A1628;color:#B7C6DB;padding:24px 0;font-size:14px;margin-top:28px}footer a{color:#fff}footer p{margin:4px 0}.row{display:flex;gap:12px;align-items:center}.row img{width:56px;height:56px;border-radius:14px;object-fit:cover}`;
+const CSS = `*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;color:#0A1628;background:#F4F8FF;line-height:1.6}a{color:#0066CC}.wrap{max-width:860px;margin:0 auto;padding:0 20px}header.top{background:#0066CC;color:#fff}.nav{display:flex;align-items:center;justify-content:space-between;padding:14px 0}.brand{display:flex;align-items:center;gap:10px;font-weight:900;font-size:22px;color:#fff;text-decoration:none}.logo{width:38px;height:38px;border-radius:10px;background:#F5A623;color:#0066CC;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900}.btn{display:inline-block;background:#F5A623;color:#0A1628;font-weight:800;text-decoration:none;padding:12px 20px;border-radius:14px;font-size:15px}.btn.blue{background:#0066CC;color:#fff}.crumbs{font-size:13px;padding-bottom:8px}.crumbs a{color:#fff}.cover{height:190px;background:#003F8A center/cover no-repeat}.cover img{width:100%;height:100%;object-fit:cover;display:block}.profile{display:flex;gap:14px;align-items:flex-end;margin-top:-38px;position:relative}.avatar{width:84px;height:84px;border-radius:20px;background:#fff;border:3px solid #fff;box-shadow:0 4px 14px rgba(0,0,0,.18);overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;color:#0066CC;flex-shrink:0}.avatar img{width:100%;height:100%;object-fit:cover}h1{font-size:clamp(24px,5vw,32px);line-height:1.2;margin-top:14px}.meta{color:#415A77;font-size:14px;margin:4px 0 10px}.pill{display:inline-block;background:#E8F2FF;color:#0066CC;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;margin-right:6px}section{padding:22px 0 4px}h2{font-size:21px;font-weight:900;margin-bottom:10px}p{margin-bottom:10px;color:#243B55}.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}.tile{background:#fff;border:1px solid #DCE7F5;border-radius:12px;padding:12px 8px;text-align:center}.tile b{display:block;font-size:20px;color:#0066CC}.tile span{font-size:12px;color:#5B7391}.card{background:#fff;border:1px solid #DCE7F5;border-radius:14px;padding:14px;margin-bottom:10px}.card h3{font-size:16px;margin-bottom:4px}.card small{color:#5B7391}.imgs{display:flex;gap:6px;overflow-x:auto;margin-top:8px}.imgs img{width:120px;height:120px;object-fit:cover;border-radius:10px;flex-shrink:0}.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}.item{background:#fff;border:1px solid #DCE7F5;border-radius:14px;overflow:hidden}.item img{width:100%;height:130px;object-fit:cover;display:block}.item div{padding:10px}.item b{display:block;font-size:14px}.stars{color:#F5A623;letter-spacing:1px}.band{background:linear-gradient(130deg,#0066CC,#003F8A);color:#fff;border-radius:18px;padding:22px;margin:24px 0}.band h2{color:#fff}.band p{color:#E8F2FF}footer{background:#0A1628;color:#B7C6DB;padding:24px 0;font-size:14px;margin-top:28px}footer a{color:#fff}footer p{margin:4px 0;color:#B7C6DB}.row{display:flex;gap:12px;align-items:center}.row img{width:56px;height:56px;border-radius:14px;object-fit:cover}`;
 
 function shell({ title, desc, canonical, image, robots, jsonld, body }) {
   return `<!DOCTYPE html>
@@ -163,13 +163,13 @@ ${sections.join("\n")}
   return shell({ title, desc, canonical: url, image, robots: indexable ? "index,follow" : "noindex,follow", jsonld, body });
 }
 
-function renderList(rows) {
+function renderList(rows, opts = {}) {
   const list = Array.isArray(rows) ? rows : [];
   const groups = {};
   list.forEach(r => { const g = TYPE_LABEL[r.kiosk_type] || "Other"; (groups[g] = groups[g] || []).push(r); });
   const order = ["Shop", "Service", "Worker", "Transport", "Other"].filter(g => groups[g]);
   const body = `${header(`<a href="/welcome.html">KaziApa</a> &rsaquo; Kiosks`)}
-<main class="wrap"><section><h1>KaziApa kiosks</h1><p>Shops, fundis, riders and service providers on KaziApa. Each kiosk shows real work, ratings and what customers say.</p></section>
+<main class="wrap"><section><h1>${esc(opts.h1 || "KaziApa kiosks")}</h1><p>${opts.intro || "Shops, fundis, riders and service providers on KaziApa. Each kiosk shows real work, ratings and what customers say."}</p></section>
 ${list.length === 0 ? `<section><p>No kiosks to show yet. Be the first: <a href="/kiosk.html">open a free kiosk</a>.</p></section>` : order.map(g => `<section><h2>${esc(g)}s</h2>${groups[g].map(r => `<a href="/kiosk/${esc(r.slug)}" style="text-decoration:none;color:inherit"><div class="card"><h3>${esc(cut(r.name, 70))}</h3><small>${esc([cut(r.category, 40), cut(r.location, 50)].filter(Boolean).join(" · "))}</small>${r.about ? `<p style="margin-top:6px">${esc(cut(r.about, 140))}</p>` : ""}</div></a>`).join("")}</section>`).join("")}
 <div class="band"><h2>Get your own kiosk</h2><p>It is free. Add your photo, your work and share the link.</p><a class="btn" href="${PLAY}">Download KaziApa</a> <a class="btn" style="background:#fff;color:#0066CC" href="/kiosk.html">How kiosks work</a></div></main>`;
   const jsonld = { "@context": "https://schema.org", "@graph": [
@@ -177,7 +177,7 @@ ${list.length === 0 ? `<section><p>No kiosks to show yet. Be the first: <a href=
     { "@type": "BreadcrumbList", itemListElement: [
       { "@type": "ListItem", position: 1, name: "KaziApa", item: `${SITE}/welcome.html` },
       { "@type": "ListItem", position: 2, name: "Kiosks", item: `${SITE}/kiosks` } ] } ] };
-  return shell({ title: "KaziApa Kiosks: Shops, Fundis and Services in Kenya", desc: "Browse KaziApa kiosks: shops, fundis, riders and service providers in Kenya with work photos, ratings and customer testimonials.", canonical: `${SITE}/kiosks`, image: `${SITE}/og-image.png`, robots: list.length ? "index,follow" : "noindex,follow", jsonld, body });
+  return shell({ title: opts.title || "KaziApa Kiosks: Shops, Fundis and Services in Kenya", desc: "Browse KaziApa kiosks: shops, fundis, riders and service providers in Kenya with work photos, ratings and customer testimonials.", canonical: `${SITE}/kiosks`, image: `${SITE}/og-image.png`, robots: (opts.noindex || !list.length) ? "noindex,follow" : "index,follow", jsonld, body });
 }
 
 export default async function handler(req, res) {
@@ -206,10 +206,31 @@ export default async function handler(req, res) {
       res.setHeader("Cache-Control", "public, s-maxage=900, stale-while-revalidate=86400");
       return res.end(renderList(rows));
     }
-    const slug = String(q.slug || "").toLowerCase();
+    let raw = String(q.slug || "");
+    try { raw = decodeURIComponent(raw); } catch (e) {}
+    const slug = raw.toLowerCase().trim().replace(/[\s_]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
     if (!/^[a-z0-9-]{1,60}$/.test(slug)) return notFound(res);
     const data = await rpc("kiosk_public", { p_slug: slug });
-    if (!data || !data.kiosk) return notFound(res);
+    if (!data || !data.kiosk) {
+      // The address is usually the kiosk name plus a few digits (for example stephen-1424).
+      // If someone types only the name, find kiosks that start with it.
+      const all = await rpc("kiosk_public_list", { p_limit: 300 });
+      const matches = (Array.isArray(all) ? all : []).filter(r => String(r.slug || "").startsWith(slug + "-") || String(r.name || "").toLowerCase() === slug.replace(/-/g, " "));
+      if (matches.length === 1) {
+        res.statusCode = 302;
+        res.setHeader("Location", `/kiosk/${matches[0].slug}`);
+        res.setHeader("Cache-Control", "public, s-maxage=300");
+        return res.end();
+      }
+      if (matches.length > 1) {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "public, s-maxage=300");
+        res.setHeader("X-Robots-Tag", "noindex");
+        return res.end(renderList(matches, { h1: `Kiosks named ${slug.replace(/-/g, " ")}`, intro: "More than one kiosk matches. Pick the one you want.", title: "Kiosks matching your search | KaziApa", noindex: true }));
+      }
+      return notFound(res);
+    }
     res.statusCode = 200;
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.setHeader("Cache-Control", "public, s-maxage=900, stale-while-revalidate=86400");
