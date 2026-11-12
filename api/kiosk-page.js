@@ -1,7 +1,8 @@
 // api/kiosk-page.js
-// Public, search-engine-readable pages for kiosks:
-//   /kiosk/<slug>   one kiosk (title, about, track record, work, testimonials, items)
-//   /kiosks         list of kiosks
+// Public, search-engine-readable pages for kiosks (one file on purpose: the free Vercel plan allows only 12 functions):
+//   /kiosk/<slug>        one kiosk (title, about, track record, work, testimonials, items)
+//   /kiosks              list of kiosks
+//   /sitemap-kiosks.xml  sitemap of kiosks that are good enough to index
 // All data comes from the database functions kiosk_public / kiosk_public_list, which return public fields only
 // (never phone numbers). Text is also cleaned here and escaped before it goes into the page.
 
@@ -183,6 +184,21 @@ export default async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") { res.statusCode = 405; return res.end("Method not allowed"); }
   try {
     const q = req.query || {};
+    if (q.sitemap) {
+      // Sitemap of kiosks that are good enough to index (served at /sitemap-kiosks.xml)
+      const rows = await rpc("kiosk_public_list", { p_limit: 5000 });
+      const urls = (Array.isArray(rows) ? rows : [])
+        .filter(k => /^[a-z0-9-]{1,60}$/.test(String(k.slug || "")))
+        .map(k => {
+          const d = k.lastmod ? new Date(k.lastmod) : null;
+          const lm = d && !isNaN(d) ? `<lastmod>${d.toISOString().slice(0, 10)}</lastmod>` : "";
+          return `  <url><loc>${SITE}/kiosk/${k.slug}</loc>${lm}</url>`;
+        }).join("\n");
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/xml; charset=utf-8");
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+    }
     if (q.list) {
       const rows = await rpc("kiosk_public_list", { p_limit: 300 });
       res.statusCode = 200;
