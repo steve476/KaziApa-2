@@ -1353,6 +1353,7 @@ export default function KaziApa() {
   const [listingsErr,setListingsErr] = useState(false);
   const [requests,setRequests]   = useState([]);
   const [conciergeTxt,setConciergeTxt] = useState("");
+  const conciergeBusy = useRef(false);
   const [conciergeTown,setConciergeTown] = useState("");
   const [conciergeDone,setConciergeDone] = useState(false);
 
@@ -2008,8 +2009,11 @@ export default function KaziApa() {
   }
 
   async function postConcierge() {
-    if(!conciergeTxt.trim()) return;
-    await sb.from("requests").insert({ buyer_name:userName,buyer_phone:phone,item:conciergeTxt,budget:0,category:"general",town:conciergeTown||userTown,area:"" });
+    if(!conciergeTxt.trim() || conciergeBusy.current) return;
+    conciergeBusy.current = true;
+    const { error:cErr } = await sb.from("requests").insert({ buyer_name:userName,buyer_phone:phone,item:conciergeTxt,budget:0,category:"general",town:conciergeTown||userTown,area:"" });
+    conciergeBusy.current = false;
+    if(cErr) { showToast("Could not post. Try again.","error"); return; }
     setConciergeDone(true);
     showToast("Request posted! Sellers will respond soon.");
   }
@@ -8534,6 +8538,11 @@ function MyListingsScreen({ phone, showToast, onBack, onBoost, onViewListing }) 
 }
 
 // ─── MY MARKET ────────────────────────────────────────────────────────────────
+function fmtBudget(b) {
+  const n = Number(b);
+  return n > 0 ? `Ksh ${n.toLocaleString()}` : "Budget not specified";
+}
+
 function haversineKm(lat1,lng1,lat2,lng2) {
   const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLng=(lng2-lng1)*Math.PI/180;
   const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
@@ -8561,7 +8570,7 @@ function MarketListScreen({ phone, userName, town, showToast, onBack, onOpenMark
     const { data:memAll } = await sb.from("market_members").select("market_id,status").eq("phone",phone);
     const mem = (memAll||[]).filter(x=>x.status!=="PENDING" && x.status!=="REJECTED");
     if(mem && mem.length) {
-      const { data:ms } = await sb.from("markets").select("*").in("id", mem.map(m=>m.market_id)).eq("status","ACTIVE");
+      const { data:ms } = await sb.from("markets").select("*").in("id", mem.map(m=>m.market_id)).eq("status","ACTIVE").or("type.is.null,type.eq.market");
       setMyMarkets(ms||[]);
     } else setMyMarkets([]);
     setMyMarketsLoading(false);
@@ -8569,7 +8578,7 @@ function MarketListScreen({ phone, userName, town, showToast, onBack, onOpenMark
 
   async function load() {
     setLoading(true);
-    const { data } = await sb.from("markets").select("*").eq("status","ACTIVE").order("is_featured",{ ascending:false }).order("name");
+    const { data } = await sb.from("markets").select("*").eq("status","ACTIVE").or("type.is.null,type.eq.market").order("is_featured",{ ascending:false }).order("name");
     setMarkets(data||[]);
     setLoading(false);
   }
@@ -9384,7 +9393,7 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
             ) : marketRequests.map(r=>(
               <div key={r.id} style={{ background:T.card,borderRadius:13,padding:12,marginBottom:10,border:`1px solid ${T.border}` }}>
                 <div style={{ fontWeight:700,color:T.text,fontSize:13 }}>{r.item}</div>
-                <div style={{ fontSize:12,color:T.primary,fontWeight:700,marginTop:2 }}>Budget: Ksh {r.budget}</div>
+                <div style={{ fontSize:12,color:T.primary,fontWeight:700,marginTop:2 }}>{Number(r.budget)>0 ? `Budget: ${fmtBudget(r.budget)}` : fmtBudget(r.budget)}</div>
                 <div style={{ fontSize:11,color:T.textMuted,marginTop:2 }}>{r.buyer_name} · {r.town}</div>
               </div>
             ))}
@@ -10701,10 +10710,15 @@ function RequestBoard({ userName,phone,town,requests,setRequests,showToast }) {
   const [form,setForm]         = useState({ item:"",budget:"",area:"",town:town!=="All"?town:"",category:"mitumba" });
   const filtered = town==="All"?requests:requests.filter(r=>r.town===town);
 
+  const [postingReq,setPostingReq] = useState(false);
+  const postingReqRef = useRef(false);
   async function postRequest() {
-    if(!form.item.trim()||!form.budget) return;
-    const { data } = await sb.from("requests").insert({ buyer_name:userName,buyer_phone:phone,item:form.item,budget:parseInt(form.budget),category:form.category,town:form.town||town,area:form.area,market_id:form.market_id||null,market_name:form.market_name||null }).select();
+    if(!form.item.trim() || postingReqRef.current) return;
+    postingReqRef.current = true; setPostingReq(true);
+    const { data, error:reqErr } = await sb.from("requests").insert({ buyer_name:userName,buyer_phone:phone,item:form.item.trim(),budget:parseInt(form.budget)||0,category:form.category,town:form.town||town,area:form.area,market_id:form.market_id||null,market_name:form.market_name||null }).select();
     if(data?.[0]) { setRequests(p=>[data[0],...p]); setShowForm(false); setForm({ item:"",budget:"",area:"",town:"",category:"mitumba",market_id:null,market_name:"" }); showToast("Request posted! Sellers can see it now."); }
+    else if(reqErr) showToast("Could not post. Try again.","error");
+    postingReqRef.current = false; setPostingReq(false);
   }
 
   async function postReply(reqId) {
@@ -10728,7 +10742,7 @@ function RequestBoard({ userName,phone,town,requests,setRequests,showToast }) {
           <div style={{ background:"#FFF8E7",borderRadius:16,padding:16,marginBottom:16,border:"1px solid #F5A623" }}>
             <div style={{ display:"flex",justifyContent:"space-between",marginBottom:6 }}>
               <div style={{ fontWeight:800,color:"#0A1628",fontSize:16,flex:1 }}>{req.item}</div>
-              <div style={{ fontSize:15,fontWeight:800,color:"#0066CC" }}>Ksh {req.budget}</div>
+              <div style={{ fontSize:Number(req.budget)>0?15:12,fontWeight:800,color:"#0066CC" }}>{fmtBudget(req.budget)}</div>
             </div>
             <div style={{ fontSize:12,color:"#7A8A9C" }}>📍 {req.area&&req.area+", "}{req.town} · {req.buyer_name}</div>
             {req.market_id && <div style={{ marginTop:6,display:"inline-block",background:"#E8F5EE",color:"#145A36",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700 }}>🏬 Tagged to {req.market_name||"a market"}</div>}
@@ -10787,7 +10801,7 @@ function RequestBoard({ userName,phone,town,requests,setRequests,showToast }) {
             </div>
             <div style={{ display:"flex",gap:10,marginBottom:12 }}>
               <div style={{ flex:1 }}>
-                <label style={{ fontSize:12,fontWeight:700,color:"#0A1628",display:"block",marginBottom:6 }}>Budget (Ksh)</label>
+                <label style={{ fontSize:12,fontWeight:700,color:"#0A1628",display:"block",marginBottom:6 }}>Budget (Ksh) · optional</label>
                 <input value={form.budget} onChange={e=>setForm({...form,budget:e.target.value})} type="number" placeholder="300"
                   style={{ width:"100%",padding:"11px 13px",borderRadius:11,border:"1px solid #DCE8F5",fontSize:14,boxSizing:"border-box",color:"#0A1628" }} />
               </div>
@@ -10811,8 +10825,8 @@ function RequestBoard({ userName,phone,town,requests,setRequests,showToast }) {
               </div>
             </div>
             <MarketPicker marketId={form.market_id} marketName={form.market_name||""} onPick={(id,name)=>setForm({...form,market_id:id,market_name:name})} />
-            <button onClick={postRequest} style={{ width:"100%",padding:14,background:"#0066CC",color:"#fff",border:"none",borderRadius:13,fontSize:15,fontWeight:800,cursor:"pointer" }}>
-              Post Request →
+            <button onClick={postRequest} disabled={postingReq} style={{ width:"100%",padding:14,background:"#0066CC",color:"#fff",border:"none",borderRadius:13,fontSize:15,fontWeight:800,cursor:"pointer",opacity:postingReq?0.6:1 }}>
+              {postingReq ? "Posting..." : "Post Request →"}
             </button>
           </div>
         </div>
@@ -10839,7 +10853,7 @@ function RequestBoard({ userName,phone,town,requests,setRequests,showToast }) {
                     <div style={{ fontSize:11,color:"#7A8A9C",marginTop:3 }}>📍 {req.area&&req.area+", "}{req.town} · {req.buyer_name}</div>
                   </div>
                   <div style={{ textAlign:"right",flexShrink:0 }}>
-                    <div style={{ fontSize:15,fontWeight:800,color:"#0066CC" }}>Ksh {req.budget}</div>
+                    <div style={{ fontSize:Number(req.budget)>0?15:12,fontWeight:800,color:"#0066CC" }}>{fmtBudget(req.budget)}</div>
                   </div>
                 </div>
                 <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10 }}>
