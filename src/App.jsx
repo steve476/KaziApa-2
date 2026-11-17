@@ -750,7 +750,7 @@ function ListingCard({ listing,onClick }) {
         </div>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4 }}>
           <Stars rating={listing.rating} />
-          <div style={{ fontSize:15,fontWeight:800,color:T.primary }}>Ksh {listing.price_label||listing.price?.toLocaleString()}</div>
+          <div style={{ fontSize:15,fontWeight:800,color:T.primary }}>{fmtListingPrice(listing)}</div>
         </div>
       </div>
     </div>
@@ -935,7 +935,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
 
   if (showDel) {
     const delCost = zone?.price||rider?.price||250;
-    const total   = (listing?.price||0)+delCost;
+    const total   = listingPriceNumber(listing)+delCost;
     return (
       <div style={{ fontFamily:"'Segoe UI',system-ui,sans-serif",background:T.surface,minHeight:"100vh",maxWidth:430,margin:"0 auto" }}>
         <BackHeader title="Choose Delivery" onBack={()=>{ if(dStep>1)setDStep(dStep-1); else setShowDel(false); }} right={<span style={{ fontSize:11,color:"rgba(255,255,255,0.6)" }}>{dStep}/3</span>} />
@@ -985,7 +985,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
             <div>
               <div style={{ fontSize:14,fontWeight:800,color:T.text,marginBottom:14 }}>Confirm Order</div>
               <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:14,border:`1px solid ${T.border}` }}>
-                {[["Item",listing?.title],["Seller",sellerName],["Item price",`Ksh ${listing?.price?.toLocaleString()}`],["Delivery",`Ksh ${delCost}`],...(rider&&!rider.bus?[["Rider",rider.name]]:rider?.bus?[["Service",rider.name]]:[])].map(([k,v])=>(
+                {[["Item",listing?.title],["Seller",sellerName],["Item price",listingPriceNumber(listing)>0 ? `Ksh ${listingPriceNumber(listing).toLocaleString()}` : "To be agreed"],["Delivery",`Ksh ${delCost}`],...(rider&&!rider.bus?[["Rider",rider.name]]:rider?.bus?[["Service",rider.name]]:[])].map(([k,v])=>(
                   <div key={k} style={{ display:"flex",justifyContent:"space-between",marginBottom:10,fontSize:14 }}><span style={{ color:T.textMid }}>{k}</span><span style={{ fontWeight:600 }}>{v}</span></div>
                 ))}
                 <div style={{ borderTop:`1px solid ${T.border}`,paddingTop:10,display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:900 }}>
@@ -1023,7 +1023,7 @@ function SmartChat({ listing, currentPhone, currentName, buyerPhone, buyerName, 
           <div style={{ flex:1,minWidth:0 }}>
             <div style={{ fontSize:10,color:T.textMuted,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5 }}>About this post</div>
             <div style={{ fontSize:13,fontWeight:700,color:T.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{listing.title}</div>
-            {ctxListing && ctxListing.price!=null && <div style={{ fontSize:12,fontWeight:800,color:T.primary }}>Ksh {ctxListing.price_label||Number(ctxListing.price).toLocaleString()}</div>}
+            {ctxListing && ctxListing.price!=null && <div style={{ fontSize:12,fontWeight:800,color:T.primary }}>{fmtListingPrice(ctxListing)}</div>}
           </div>
           {ctxListing && <div style={{ fontSize:12,color:T.primary,fontWeight:700,flexShrink:0 }}>View ›</div>}
         </div>
@@ -1688,7 +1688,7 @@ export default function KaziApa() {
   // For listings with a price range ("From 5000-25000") the buyer types the amount agreed in chat
   const [agreedAmount,setAgreedAmount] = useState("");
   useEffect(()=>{ setAgreedAmount(""); },[activeListing?.id]);
-  const checkoutAmount = Number(activeListing?.price) > 0 ? Number(activeListing.price) : (Number(agreedAmount) || 0);
+  const checkoutAmount = listingPriceNumber(activeListing) > 0 ? listingPriceNumber(activeListing) : (Number(agreedAmount) || 0);
   const [presenceTick,setPresenceTick] = useState(0);
   const [statusOpen,setStatusOpen] = useState(null);   // seller_phone of the group being viewed
   const [showStatusComposer,setShowStatusComposer] = useState(false);
@@ -1891,7 +1891,11 @@ export default function KaziApa() {
       return;
     }
     // Parse price — handle ranges like "12000-20000" by taking the first number
-    const parsedPrice = parseInt(postPrice.toString().replace(/[^0-9]/,"")) || 0;
+    const parsedPrice = parsePriceInput(postPrice);
+    if(parsedPrice > HIGH_PRICE_WARN) {
+      const okHigh = await askConfirm(`Ksh ${parsedPrice.toLocaleString()} is a very high price. Is that correct?`, { okLabel:"Yes, post it" });
+      if(!okHigh) { setPosting(false); return; }
+    }
     const { data:newListing, error } = await sb.from("listings").insert({
       title:postTitle, price:parsedPrice, price_label:postPrice,
       description:postDesc, category:postCat, town:postTown,
@@ -2621,7 +2625,7 @@ export default function KaziApa() {
                   <div style={{ fontSize:12,color:T.textMuted,marginTop:3 }}>📍 {activeListing.town}</div>
                   <Stars rating={activeListing.rating} />
                 </div>
-                <div style={{ fontSize:22,fontWeight:900,color:T.primary }}>Ksh {activeListing.price_label||activeListing.price?.toLocaleString()}</div>
+                <div style={{ fontSize:22,fontWeight:900,color:T.primary }}>{fmtListingPrice(activeListing)}</div>
               </div>
               {activeListing.description && <div style={{ marginTop:12,fontSize:13,color:T.textMid,lineHeight:1.6 }}>{activeListing.description}</div>}
             </div>
@@ -2651,7 +2655,7 @@ export default function KaziApa() {
             {/* Show Buy Now only if listing is available and user is not the seller */}
             {activeListing.seller_phone !== phone && !activeListing.sold && (
               <Btn onClick={()=>{ setCheckStep(1); nav("checkout","browse"); }}>
-                Buy Now — {Number(activeListing.price) > 0 ? `Ksh ${Number(activeListing.price).toLocaleString()}` : "agree the price"}
+                Buy Now — {listingPriceNumber(activeListing) > 0 ? `Ksh ${listingPriceNumber(activeListing).toLocaleString()}` : "agree the price"}
               </Btn>
             )}
             {activeListing.sold && (
@@ -2843,10 +2847,10 @@ export default function KaziApa() {
               <div>
                 <div style={{ background:T.card,borderRadius:14,padding:16,marginBottom:14,border:`1px solid ${T.border}` }}>
                   <div style={{ fontWeight:800,color:T.text,marginBottom:14 }}>Order Summary</div>
-                  {[["Item",Number(activeListing.price)>0 ? `Ksh ${Number(activeListing.price).toLocaleString()}` : (activeListing.price_label ? `Ksh ${activeListing.price_label}` : "Price agreed in chat")],["Seller",activeListing.seller_name]].map(([k,v])=>(
+                  {[["Item",fmtListingPrice(activeListing)==="Price on request" ? "Price agreed in chat" : fmtListingPrice(activeListing)],["Seller",activeListing.seller_name]].map(([k,v])=>(
                     <div key={k} style={{ display:"flex",justifyContent:"space-between",marginBottom:10,fontSize:14 }}><span style={{ color:T.textMid }}>{k}</span><span style={{ fontWeight:600 }}>{v}</span></div>
                   ))}
-                  {!(Number(activeListing.price) > 0) && (
+                  {!(listingPriceNumber(activeListing) > 0) && (
                     <div style={{ marginBottom:12 }}>
                       <label style={{ fontSize:12,fontWeight:700,color:T.text,display:"block",marginBottom:6 }}>Amount you agreed with the seller (Ksh)</label>
                       <input type="tel" inputMode="numeric" value={agreedAmount} onChange={e=>setAgreedAmount(e.target.value.replace(/\D/g,"").slice(0,8))} placeholder="e.g. 12000"
@@ -4372,13 +4376,13 @@ function ShambaScreen({ userName, phone, town, showToast, onBack, lang }) {
     if(tab==="produce") {
       if(!pName||!pPrice||!pTown) { showToast("Fill in name, price and town","error"); setPosting(false); return; }
       const cat = PRODUCE_CATS.find(c=>c.id===pCat);
-      payload = { ...payload, title:`${cat?.icon||"🌿"} ${pName}`, price:parseInt(pPrice)||0, price_label:`${pPrice} ${pUnit}`, description:`${pDesc}${pQty?` · Available: ${pQty}`:""}`, town:pTown, photos:pPhotos, shamba_unit:pUnit, shamba_produce_cat:pCat };
+      payload = { ...payload, title:`${cat?.icon||"🌿"} ${pName}`, price:parsePriceInput(pPrice), price_label:`${pPrice} ${pUnit}`, description:`${pDesc}${pQty?` · Available: ${pQty}`:""}`, town:pTown, photos:pPhotos, shamba_unit:pUnit, shamba_produce_cat:pCat };
     } else if(tab==="land") {
       if(!lTitle||!lPrice||!lTown) { showToast("Fill in title, price and town","error"); setPosting(false); return; }
-      payload = { ...payload, title:`🏞️ ${lTitle}`, price:parseInt(lPrice)||0, price_label:lPrice, description:`${lDesc}${lSize?` · Size: ${lSize}`:""}`, town:lTown, photos:lPhotos, shamba_land_type:lType };
+      payload = { ...payload, title:`🏞️ ${lTitle}`, price:parsePriceInput(lPrice), price_label:lPrice, description:`${lDesc}${lSize?` · Size: ${lSize}`:""}`, town:lTown, photos:lPhotos, shamba_land_type:lType };
     } else {
       if(!eTitle||!eTown) { showToast("Fill in title and town","error"); setPosting(false); return; }
-      payload = { ...payload, title:`🚜 ${eTitle}`, price:parseInt(ePrice)||0, price_label:ePrice, description:eDesc, town:eTown, photos:ePhotos, shamba_equipment_cat:eCat };
+      payload = { ...payload, title:`🚜 ${eTitle}`, price:parsePriceInput(ePrice), price_label:ePrice, description:eDesc, town:eTown, photos:ePhotos, shamba_equipment_cat:eCat };
     }
     const { error } = await sb.from("listings").insert(payload);
     if(error) showToast("Error posting. Try again.","error");
@@ -4412,7 +4416,7 @@ function ShambaScreen({ userName, phone, town, showToast, onBack, lang }) {
                 <div style={{ fontSize:12,color:T.textMuted,marginTop:3 }}>📍 {selected.town} · {selected.seller_name}</div>
               </div>
               <div style={{ textAlign:"right" }}>
-                <div style={{ fontSize:20,fontWeight:900,color:tc.color }}>Ksh {selected.price_label||selected.price?.toLocaleString()}</div>
+                <div style={{ fontSize:20,fontWeight:900,color:tc.color }}>{fmtListingPrice(selected)}</div>
               </div>
             </div>
             {selected.description && <div style={{ marginTop:12,fontSize:13,color:T.textMid,lineHeight:1.7 }}>{selected.description}</div>}
@@ -4568,7 +4572,7 @@ function ShambaScreen({ userName, phone, town, showToast, onBack, lang }) {
                     </div>
                   </div>
                   <div style={{ textAlign:"right",flexShrink:0 }}>
-                    <div style={{ fontSize:14,fontWeight:800,color:tc.color }}>Ksh {item.price_label||item.price?.toLocaleString()}</div>
+                    <div style={{ fontSize:14,fontWeight:800,color:tc.color }}>{fmtListingPrice(item)}</div>
                   </div>
                 </div>
               </div>
@@ -5094,7 +5098,7 @@ function PublicKiosk({ phone, onClose }) {
       const k = matches && matches[0];
       if (!k) { setNotFound(true); setLoading(false); return; }
       const { data:l } = await sb.from("listings").select("*").eq("seller_phone",k.phone).order("created_at",{ ascending:false }).limit(30);
-      setKiosk(k); setListings(l||[]); setLoading(false);
+      setKiosk(k); setListings((l||[]).filter(x=>!x.kiosk_hidden)); setLoading(false);
       // track record + testimonials (totals only), and count this visit once per browser per day
       sb.rpc("kiosk_track_record", { p_phone:k.phone }).then(({ data })=>{ if (data && typeof data==="object") setRec(data); });
       loadTestimonials(k.phone);
@@ -5151,7 +5155,7 @@ function PublicKiosk({ phone, onClose }) {
                 {l.photos?.[0] ? <img src={l.photos[0]} alt="" style={{ width:"100%",height:100,objectFit:"cover" }} /> : <div style={{ width:"100%",height:100,background:T2.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:28 }}>📦</div>}
                 <div style={{ padding:8 }}>
                   <div style={{ fontSize:12,fontWeight:700,color:T2.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{l.title}</div>
-                  <div style={{ fontSize:12,fontWeight:800,color:T2.primary }}>Ksh {l.price?.toLocaleString()}</div>
+                  <div style={{ fontSize:12,fontWeight:800,color:T2.primary }}>{fmtListingPrice(l)}</div>
                   {l.sold && <div style={{ fontSize:10,color:"#e53e3e",fontWeight:700 }}>SOLD</div>}
                 </div>
               </div>
@@ -8411,7 +8415,7 @@ function KioskScreen({ phone, userName, town, showToast, onBack, onAddItem, onOp
                   {l.photos?.[0] ? <img src={l.photos[0]} alt="" style={{ width:56,height:56,borderRadius:10,objectFit:"cover",flexShrink:0 }} /> : <div style={{ width:56,height:56,borderRadius:10,background:T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0 }}>📦</div>}
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:700,color:T.text,fontSize:13 }}>{l.title}</div>
-                    <div style={{ fontSize:12,color:T.primary,fontWeight:700 }}>Ksh {l.price?.toLocaleString()}</div>
+                    <div style={{ fontSize:12,color:T.primary,fontWeight:700 }}>{fmtListingPrice(l)}</div>
                     {l.sold && <div style={{ fontSize:11,color:T.coral,fontWeight:700 }}>SOLD</div>}
                     {l.featured && <div style={{ fontSize:11,color:T.accentDark,fontWeight:700 }}><Icon n="boost" s={11} /> Boosted</div>}
                   </div>
@@ -8444,17 +8448,30 @@ function MyListingsScreen({ phone, showToast, onBack, onBoost, onViewListing }) 
   }
 
   function openEdit(l) {
-    setEditing(l); setETitle(l.title||""); setEPrice(String(l.price??"")); setEDesc(l.description||"");
+    setEditing(l); setETitle(l.title||""); setEPrice(String(l.price_label || l.price || "")); setEDesc(l.description||"");
   }
 
   async function saveEdit() {
     if(!eTitle.trim() || !ePrice.trim()) { showToast("Title and price are required","error"); return; }
     setSaving(true);
-    const priceNum = parseFloat(ePrice.replace(/[^0-9.]/g,""));
-    await sb.from("listings").update({ title:eTitle.trim(), price:isNaN(priceNum)?editing.price:priceNum, description:eDesc.trim() }).eq("id",editing.id);
-    setListings(ls=>ls.map(l=>l.id===editing.id ? { ...l, title:eTitle.trim(), price:isNaN(priceNum)?l.price:priceNum, description:eDesc.trim() } : l));
+    const priceNum = parsePriceInput(ePrice);
+    if(priceNum > HIGH_PRICE_WARN) {
+      const okHigh = await askConfirm(`Ksh ${priceNum.toLocaleString()} is a very high price. Is that correct?`, { okLabel:"Yes, save it" });
+      if(!okHigh) { setSaving(false); return; }
+    }
+    const { error:upErr } = await sb.from("listings").update({ title:eTitle.trim(), price:priceNum, price_label:ePrice.trim(), description:eDesc.trim() }).eq("id",editing.id);
+    if(upErr) { setSaving(false); showToast("Could not save. Try again.","error"); return; }
+    setListings(ls=>ls.map(l=>l.id===editing.id ? { ...l, title:eTitle.trim(), price:priceNum, price_label:ePrice.trim(), description:eDesc.trim() } : l));
     setSaving(false); setEditing(null);
     showToast("Listing updated");
+  }
+
+  async function toggleKiosk(l) {
+    const hide = !l.kiosk_hidden;
+    const { error } = await sb.from("listings").update({ kiosk_hidden:hide }).eq("id",l.id);
+    if(error) { showToast("Could not update. Please try again later.","error"); return; }
+    setListings(ls=>ls.map(x=>x.id===l.id ? { ...x, kiosk_hidden:hide } : x));
+    showToast(hide ? "Hidden from your kiosk" : "Shown on your kiosk again");
   }
 
   async function toggleSold(l) {
@@ -8487,16 +8504,18 @@ function MyListingsScreen({ phone, showToast, onBack, onBoost, onViewListing }) 
               </div>
               <div style={{ flex:1,minWidth:0 }} onClick={()=>onViewListing(l)}>
                 <div style={{ fontWeight:700,color:T.text,fontSize:14,cursor:"pointer" }}>{l.title}</div>
-                <div style={{ fontSize:13,color:T.primary,fontWeight:700 }}>Ksh {l.price?.toLocaleString()}</div>
+                <div style={{ fontSize:13,color:T.primary,fontWeight:700 }}>{fmtListingPrice(l)}</div>
                 <div style={{ display:"flex",gap:6,marginTop:4 }}>
                   {l.sold && <span style={{ fontSize:10,fontWeight:800,color:"#fff",background:T.coral,borderRadius:6,padding:"2px 7px" }}>SOLD</span>}
                   {l.featured && <span style={{ fontSize:10,fontWeight:800,color:T.primary,background:T.accentSoft,borderRadius:6,padding:"2px 7px" }}><Icon n="boost" s={11} /> BOOSTED</span>}
+                  {l.kiosk_hidden && <span style={{ fontSize:10,fontWeight:800,color:T.textMuted,background:T.border,borderRadius:6,padding:"2px 7px" }}>HIDDEN FROM KIOSK</span>}
                 </div>
               </div>
             </div>
             <div style={{ display:"flex",gap:6,marginTop:10,flexWrap:"wrap" }}>
               <button onClick={()=>openEdit(l)} style={{ flex:1,minWidth:70,padding:"8px 6px",background:T.border,color:T.text,border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer" }}>✏️ Edit</button>
               <button onClick={()=>toggleSold(l)} style={{ flex:1,minWidth:70,padding:"8px 6px",background:l.sold?T.accentSoft:T.successSoft||T.border,color:l.sold?T.accentDark:T.success||T.text,border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer" }}>{l.sold ? "↺ Relist" : "✓ Mark Sold"}</button>
+              <button onClick={()=>toggleKiosk(l)} style={{ flex:1,minWidth:70,padding:"8px 6px",background:T.border,color:T.text,border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer" }}>{l.kiosk_hidden ? "👁 Show on kiosk" : "🙈 Hide from kiosk"}</button>
               {!l.featured && <button onClick={()=>onBoost(l)} style={{ flex:1,minWidth:70,padding:"8px 6px",background:T.accent,color:T.primary,border:"none",borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer" }}><Icon n="boost" s={14} /> Boost</button>}
               <button onClick={()=>setConfirmDelete(l)} style={{ flex:1,minWidth:70,padding:"8px 6px",background:"transparent",color:T.coral,border:`1px solid ${T.coral}`,borderRadius:9,fontSize:12,fontWeight:700,cursor:"pointer" }}>🗑 Delete</button>
             </div>
@@ -8538,6 +8557,30 @@ function MyListingsScreen({ phone, showToast, onBack, onBoost, onViewListing }) 
 }
 
 // ─── MY MARKET ────────────────────────────────────────────────────────────────
+function priceNumbers(label) {
+  return String(label ?? "").replace(/(\d),(?=\d)/g,"$1").match(/\d+(?:\.\d+)?/g) || [];
+}
+// First number in what the seller typed: "12,000-20,000" -> 12000, "1,200,000" -> 1200000
+function parsePriceInput(v) {
+  const n = priceNumbers(v);
+  return n.length ? Math.round(parseFloat(n[0])) : 0;
+}
+// Trustworthy single price for checkout: 0 when the label is a range or no price was given
+function listingPriceNumber(l) {
+  const n = priceNumbers(l?.price_label);
+  if(n.length >= 2) return 0;
+  if(n.length === 1) return Math.round(parseFloat(n[0]));
+  return Number(l?.price) || 0;
+}
+// What buyers see: never "Ksh 0", never a corrupted range number
+function fmtListingPrice(l) {
+  const label = String(l?.price_label ?? "").trim();
+  if(label && /\d/.test(label)) return /^(ksh|kes|sh)\b/i.test(label) ? label.replace(/^(ksh|kes|sh)\.?\s*/i,"Ksh ") : `Ksh ${label}`;
+  const n = Number(l?.price) || 0;
+  return n > 0 ? `Ksh ${n.toLocaleString()}` : "Price on request";
+}
+const HIGH_PRICE_WARN = 5000000;
+
 function fmtBudget(b) {
   const n = Number(b);
   return n > 0 ? `Ksh ${n.toLocaleString()}` : "Budget not specified";
@@ -9374,7 +9417,7 @@ function MarketProfileScreen({ market, phone, userName, showToast, onBack, onAdd
                 {l.photos?.[0] ? <img src={l.photos[0]} alt="" style={{ width:48,height:48,borderRadius:10,objectFit:"cover" }} /> : <div style={{ width:48,height:48,borderRadius:10,background:T.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20 }}>🛒</div>}
                 <div style={{ flex:1,minWidth:0 }}>
                   <div style={{ fontWeight:700,color:T.text,fontSize:13 }}>{l.title}</div>
-                  <div style={{ fontSize:12,color:T.primary,fontWeight:700 }}>{l.price_label || `Ksh ${l.price}`}</div>
+                  <div style={{ fontSize:12,color:T.primary,fontWeight:700 }}>{fmtListingPrice(l)}</div>
                 </div>
                 <a href={`tel:${l.seller_phone}`} style={{ background:T.successSoft,color:T.success,borderRadius:20,padding:"6px 12px",fontSize:11,fontWeight:700,textDecoration:"none" }}>📞 Call</a>
               </div>
